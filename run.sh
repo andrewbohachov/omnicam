@@ -13,4 +13,4 @@ if [ ! -d "$VENV" ]; then
 fi
 
 export PYTHONPATH="$DIR:$PYTHONPATH"
-exec "$VENV/bin/python" -m aircam.cli "$@"
+exec "$VENV/bin/python" -m omnicam.cli "$@"
