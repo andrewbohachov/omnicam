@@ -65,16 +65,23 @@ def parse_args():
         help="Webcam name shown in Discord/OBS/browsers (default: EasyWebcam)"
     )
     parser.add_argument(
+        "-r", "--res", "--resolution",
+        type=str,
+        default="1080",
+        choices=["720", "1080", "720p", "1080p"],
+        help="Webcam output resolution preset: 1080 or 720 (default: 1080)"
+    )
+    parser.add_argument(
         "--width",
         type=int,
-        default=1280,
-        help="Target webcam width (default: 1280)"
+        default=None,
+        help="Custom webcam width override"
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=720,
-        help="Target webcam height (default: 720)"
+        default=None,
+        help="Custom webcam height override"
     )
     parser.add_argument(
         "--ip",
@@ -159,8 +166,16 @@ def main():
     port = args.port
     device = args.device
     card_label = args.label
-    width = args.width
-    height = args.height
+
+    res_str = args.res.lower().replace("p", "")
+    if res_str == "720":
+        width, height = 1280, 720
+    else:
+        width, height = 1920, 1080
+
+    if args.width is not None and args.height is not None:
+        width = args.width
+        height = args.height
 
     print("=========================================================")
     print(f"  📷 EasyWebcam — Phone Webcam for Linux")

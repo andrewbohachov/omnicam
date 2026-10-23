@@ -47,11 +47,11 @@ async function handleRemoteCommand(cmd) {
 
 async function changeResolution(resChoice) {
   if (resChoice !== '720' && resChoice !== '1080') {
-    resChoice = '720';
+    resChoice = '1080';
   }
   resSelect.value = resChoice;
   statRes.textContent = `${resChoice}p`;
-  const target = RESOLUTIONS[resChoice];
+  const target = RESOLUTIONS[resChoice] || RESOLUTIONS['1080'];
   const fpsChoice = parseInt(fpsSelect.value, 10);
 
   if (currentTrack) {
@@ -101,7 +101,7 @@ async function flipCamera() {
 }
 
 async function reinitCameraTrack() {
-  const resChoice = resSelect.value === '1080' ? '1080' : '720';
+  const resChoice = resSelect.value === '720' ? '720' : '1080';
   const fpsChoice = parseInt(fpsSelect.value, 10) || 30;
   const target = RESOLUTIONS[resChoice];
 

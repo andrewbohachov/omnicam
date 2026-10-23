@@ -10,7 +10,7 @@ import time
 from typing import Optional
 
 class V4L2DeviceManager:
-    def __init__(self, device: Optional[str] = None, card_label: str = "EasyWebcam", width: int = 1280, height: int = 720):
+    def __init__(self, device: Optional[str] = None, card_label: str = "EasyWebcam", width: int = 1920, height: int = 1080):
         self.device = device or "/dev/video0"
         self.card_label = card_label
         self.target_width = width
