@@ -94,7 +94,7 @@ class V4L2DeviceManager:
             print(f"[!] Warning setting format: {e}")
 
         try:
-            self._fd = os.open(self.device, os.O_WRONLY | os.O_SYNC)
+            self._fd = os.open(self.device, os.O_WRONLY)
             return True
         except Exception as e:
             print(f"[!] Error opening {self.device}: {e}")

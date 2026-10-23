@@ -123,7 +123,7 @@ async function startStream() {
   const track = localStream.getVideoTracks()[0];
   const sender = pc.addTrack(track, localStream);
 
-  // Tell browser's encoder: prioritize framerate, allocate high bitrate for local Wi-Fi
+  // Tell browser's encoder: prioritize framerate and smooth bitrate to prevent packet drops
   try {
     const params = sender.getParameters();
     if (!params.encodings || params.encodings.length === 0) {
@@ -131,8 +131,11 @@ async function startStream() {
     }
     params.degradationPreference = 'maintain-framerate';
     const fpsChoice = parseInt(fpsSelect.value, 10);
+    const resChoice = resSelect.value;
+    const targetBitrate = resChoice === '4k' ? 8000000 : (resChoice === '1080' ? 4500000 : 2500000);
+    
     params.encodings[0].maxFramerate = fpsChoice;
-    params.encodings[0].maxBitrate = 12000000; // 12 Mbps
+    params.encodings[0].maxBitrate = targetBitrate;
     await sender.setParameters(params);
   } catch (e) {
     console.log("Sender parameters notice:", e);

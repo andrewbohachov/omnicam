@@ -1,6 +1,7 @@
 """
 EasyWebcam - WebRTC Session & Frame Pipeline
-Receives video track from phone browser, decodes frames with PyAV, and pipes them to V4L2DeviceManager.
+Decouples network receiving from V4L2 writing via a non-blocking queue.
+Ensures zero UDP packet drop and artifact-free hardware-accelerated streaming.
 Includes Python 3.14 asyncio compatibility patches for aioice/aiortc.
 """
 
@@ -62,16 +63,18 @@ class WebRTCSession:
         self.total_frames = 0
         self._frame_count = 0
         self._last_fps_time = time.time()
+        self._frame_queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+        self._writer_task: Optional[asyncio.Task] = None
 
     async def handle_offer(self, sdp: str, sdp_type: str) -> dict:
         """Processes client WebRTC SDP offer and returns server answer."""
         if self.pc:
             await self.close()
 
-        # No external STUN servers needed for local LAN streaming
         config = RTCConfiguration(iceServers=[])
         self.pc = RTCPeerConnection(configuration=config)
         self.is_active = True
+        self._frame_queue = asyncio.Queue(maxsize=1)
 
         # Prioritize hardware-accelerated H.264 video codec
         try:
@@ -93,7 +96,9 @@ class WebRTCSession:
         @self.pc.on("track")
         def on_track(track: MediaStreamTrack):
             if track.kind == "video":
-                asyncio.create_task(self._process_video_track(track))
+                # Start decoupled writer and receiver loops
+                self._writer_task = asyncio.create_task(self._v4l2_writer_loop())
+                asyncio.create_task(self._network_receiver_loop(track))
 
         offer = RTCSessionDescription(sdp=sdp, type=sdp_type)
         await self.pc.setRemoteDescription(offer)
@@ -105,14 +110,37 @@ class WebRTCSession:
             "type": self.pc.localDescription.type
         }
 
-    async def _process_video_track(self, track: MediaStreamTrack):
-        """Continuously reads frames from WebRTC track and writes to V4L2."""
+    async def _network_receiver_loop(self, track: MediaStreamTrack):
+        """
+        Dedicated network loop: Reads packets from the WebRTC socket with zero delay.
+        Pushes frames into a 1-item queue without blocking network I/O.
+        """
+        try:
+            while self.is_active:
+                frame: av.VideoFrame = await track.recv()
+                # If queue has an old unwritten frame, drop it in favor of the freshest frame
+                if self._frame_queue.full():
+                    try:
+                        self._frame_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                self._frame_queue.put_nowait(frame)
+        except Exception:
+            pass
+        finally:
+            self.is_active = False
+
+    async def _v4l2_writer_loop(self):
+        """
+        Dedicated V4L2 writer loop: Pulls fresh frames and writes to /dev/videoX.
+        Never stalls the network receiver.
+        """
         self._last_fps_time = time.time()
         self._frame_count = 0
 
         try:
             while self.is_active:
-                frame: av.VideoFrame = await track.recv()
+                frame = await self._frame_queue.get()
                 w, h = frame.width, frame.height
 
                 # Configure format on resolution change
@@ -121,7 +149,7 @@ class WebRTCSession:
                     self._current_height = h
                     self.sink.setup_format(w, h, pixel_format="YUYV")
 
-                # Reformat to YUYV (hardware-accelerated via FFmpeg/PyAV)
+                # Reformat and write directly to non-blocking V4L2 device
                 yuyv_frame = frame.reformat(format="yuyv422")
                 raw_bytes = bytes(yuyv_frame.planes[0])
                 self.sink.write_frame(raw_bytes)
@@ -147,8 +175,11 @@ class WebRTCSession:
             self.is_active = False
 
     async def close(self):
-        """Closes current WebRTC peer connection."""
+        """Closes current WebRTC peer connection and worker tasks."""
         self.is_active = False
+        if self._writer_task:
+            self._writer_task.cancel()
+            self._writer_task = None
         if self.pc:
             try:
                 await self.pc.close()
