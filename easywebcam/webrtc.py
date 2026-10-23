@@ -1,8 +1,8 @@
 """
 EasyWebcam - WebRTC Session & Frame Pipeline
 Decouples network receiving from V4L2 writing via a non-blocking queue.
-Enforces fixed output dimension and stride, eliminating scanline wrapping/stride artifacts.
-Tracks actual phone camera resolution and supports bidirectional remote control.
+Enforces fixed output dimension, stride, and automatic 16:9 aspect-crop,
+preventing perspective stretching and scanline artifacts.
 """
 
 import asyncio
@@ -51,6 +51,52 @@ except Exception:
     pass
 # -----------------------------------------------------
 
+def crop_to_16_9(frame: av.VideoFrame) -> av.VideoFrame:
+    """Center-crops frame to 16:9 widescreen to prevent perspective squash/stretch."""
+    target_ratio = 16.0 / 9.0
+    src_w, src_h = frame.width, frame.height
+    src_ratio = src_w / src_h
+
+    # If already ~16:9, return as-is
+    if abs(src_ratio - target_ratio) < 0.04:
+        return frame
+
+    if src_ratio < target_ratio:
+        # Taller than 16:9 (e.g. 4:3 1280x960), crop top & bottom
+        new_h = int(src_w / target_ratio)
+        new_h = (new_h // 2) * 2
+        crop_y = (src_h - new_h) // 2
+        new_w = src_w
+        crop_x = 0
+    else:
+        # Wider than 16:9, crop sides
+        new_w = int(src_h * target_ratio)
+        new_w = (new_w // 2) * 2
+        crop_x = (src_w - new_w) // 2
+        new_h = src_h
+        crop_y = 0
+
+    try:
+        cropped = av.VideoFrame(new_w, new_h, frame.format.name)
+        y_stride = frame.planes[0].line_size
+        cropped.planes[0].update(
+            memoryview(frame.planes[0])[crop_y * y_stride : (crop_y + new_h) * y_stride]
+        )
+        u_stride = frame.planes[1].line_size
+        u_crop_y = crop_y // 2
+        u_h = new_h // 2
+        cropped.planes[1].update(
+            memoryview(frame.planes[1])[u_crop_y * u_stride : (u_crop_y + u_h) * u_stride]
+        )
+        v_stride = frame.planes[2].line_size
+        cropped.planes[2].update(
+            memoryview(frame.planes[2])[u_crop_y * v_stride : (u_crop_y + u_h) * v_stride]
+        )
+        return cropped
+    except Exception:
+        return frame
+
+
 class WebRTCSession:
     def __init__(self, sink: V4L2DeviceManager, on_stats_update: Optional[Callable[[dict], None]] = None):
         self.sink = sink
@@ -79,13 +125,11 @@ class WebRTCSession:
         self.is_active = True
         self._frame_queue = asyncio.Queue(maxsize=1)
 
-        # Create control DataChannel to send commands to the phone
         try:
             self.channel = self.pc.createDataChannel("control")
         except Exception:
             self.channel = None
 
-        # Prioritize hardware-accelerated H.264 video codec
         try:
             t = self.pc.addTransceiver("video", direction="recvonly")
             capabilities = RTCRtpReceiver.getCapabilities("video")
@@ -132,7 +176,6 @@ class WebRTCSession:
     async def _network_receiver_loop(self, track: MediaStreamTrack):
         """
         Dedicated network loop: Reads packets from the WebRTC socket with zero delay.
-        Pushes frames into a 1-item queue without blocking network I/O.
         """
         try:
             while self.is_active:
@@ -163,8 +206,11 @@ class WebRTCSession:
                 self._last_phone_w = in_frame.width
                 self._last_phone_h = in_frame.height
 
-                # Always scale and reformat to fixed device resolution (e.g. 1920x1080 YUYV)
-                out_frame = in_frame.reformat(
+                # Ensure perfect 16:9 perspective (center-crop non-16:9 streams)
+                normalized_frame = crop_to_16_9(in_frame)
+
+                # Reformat and scale to target device resolution (1280x720 YUYV)
+                out_frame = normalized_frame.reformat(
                     width=self.target_width,
                     height=self.target_height,
                     format="yuyv422"

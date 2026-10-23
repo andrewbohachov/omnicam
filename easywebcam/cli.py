@@ -2,6 +2,7 @@
 EasyWebcam CLI Entry Point
 Finds network IP, sets up virtual webcam, prints ANSI QR code, and starts the server.
 Includes interactive CLI commands to control resolution, FPS, and camera flip from the PC.
+Provides a clean, non-overwriting terminal prompt.
 """
 
 import sys
@@ -88,53 +89,63 @@ def parse_args():
     )
     return parser.parse_args()
 
-def setup_cli_input_thread(server: EasyWebcamServer, loop: asyncio.AbstractEventLoop, stop_event: threading.Event):
-    """Reads interactive terminal commands from the user while streaming."""
+def setup_cli_input_thread(server: EasyWebcamServer, loop: asyncio.AbstractEventLoop, stop_event: threading.Event, get_last_stats):
+    """Reads interactive terminal commands from the user without overwriting input."""
     def input_worker():
         while not stop_event.is_set():
             try:
+                sys.stdout.write("easywebcam > ")
+                sys.stdout.flush()
                 line = sys.stdin.readline()
                 if not line:
                     break
                 cmd = line.strip().lower()
                 if not cmd:
+                    # Hitting Enter shows current status
+                    stats = get_last_stats()
+                    if stats and stats.get("frames", 0) > 0:
+                        print(f"  [📹 STATUS] Phone: {stats['phone_w']}x{stats['phone_h']} | Output: {stats['out_w']}x{stats['out_h']} | FPS: {stats['fps']} | Total Frames: {stats['frames']}")
                     continue
 
                 if cmd in ["720", "res 720", "720p"]:
-                    print("\n[🎮 REMOTE] Switching phone camera to 720p...")
+                    print("  [🎮 REMOTE] Switching phone camera to 720p...")
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("set_res", "720"), loop)
                 elif cmd in ["1080", "res 1080", "1080p"]:
-                    print("\n[🎮 REMOTE] Switching phone camera to 1080p...")
+                    print("  [🎮 REMOTE] Switching phone camera to 1080p...")
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("set_res", "1080"), loop)
-                elif cmd in ["4k", "res 4k", "2160"]:
-                    print("\n[🎮 REMOTE] Switching phone camera to 4K...")
-                    asyncio.run_coroutine_threadsafe(server.broadcast_command("set_res", "4k"), loop)
                 elif cmd in ["30", "fps 30", "30fps"]:
-                    print("\n[🎮 REMOTE] Setting phone framerate to 30 FPS...")
+                    print("  [🎮 REMOTE] Setting phone framerate to 30 FPS...")
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("set_fps", 30), loop)
                 elif cmd in ["60", "fps 60", "60fps"]:
-                    print("\n[🎮 REMOTE] Setting phone framerate to 60 FPS...")
+                    print("  [🎮 REMOTE] Setting phone framerate to 60 FPS...")
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("set_fps", 60), loop)
                 elif cmd in ["f", "flip", "cam"]:
-                    print("\n[🎮 REMOTE] Flipping camera (Front ⇄ Rear)...")
+                    print("  [🎮 REMOTE] Flipping camera (Front ⇄ Rear)...")
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("flip"), loop)
                 elif cmd in ["t", "torch", "flash"]:
-                    print("\n[🎮 REMOTE] Toggling flashlight...")
+                    print("  [🎮 REMOTE] Toggling flashlight...")
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("torch"), loop)
+                elif cmd in ["s", "status", "stat"]:
+                    stats = get_last_stats()
+                    if stats and stats.get("frames", 0) > 0:
+                        print(f"  [📹 STATUS] Phone: {stats['phone_w']}x{stats['phone_h']} | Output: {stats['out_w']}x{stats['out_h']} | FPS: {stats['fps']} | Total Frames: {stats['frames']}")
+                    else:
+                        print("  [📹 STATUS] Waiting for phone to connect...")
                 elif cmd in ["h", "help", "?"]:
                     print("\n--- [🎮 Interactive Commands] ---")
-                    print("  720 / 1080 / 4k : Change resolution")
-                    print("  30 / 60         : Change FPS")
-                    print("  f / flip        : Switch Front / Rear camera")
-                    print("  t / torch       : Toggle Flashlight")
-                    print("  q / quit        : Exit EasyWebcam")
+                    print("  720 / 1080   : Change resolution (strictly 16:9 widescreen)")
+                    print("  30 / 60      : Change FPS")
+                    print("  f / flip     : Switch Front / Rear camera")
+                    print("  t / torch    : Toggle Flashlight")
+                    print("  s / status   : Show current stream status & FPS")
+                    print("  q / quit     : Exit EasyWebcam cleanly")
                     print("---------------------------------\n")
                 elif cmd in ["q", "quit", "exit"]:
                     print("\n[*] Exiting...")
                     loop.call_soon_threadsafe(loop.stop)
                     break
                 else:
-                    print(f"\n[!] Unknown command: '{cmd}'. Type 'help' for options.")
+                    print(f"  [!] Unknown command: '{cmd}'. Type 'help' for options.")
             except Exception:
                 break
 
@@ -171,13 +182,21 @@ def main():
     ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     ssl_context.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
+    last_stats = {}
+    last_reported_res = None
+
     def on_stats(stats):
-        sys.stdout.write(
-            f"\r[📹 STREAMING] Phone: {stats['phone_w']}x{stats['phone_h']} | "
-            f"Output: {stats['out_w']}x{stats['out_h']} | "
-            f"FPS: {stats['fps']} | Total Frames: {stats['frames']}   "
-        )
-        sys.stdout.flush()
+        nonlocal last_stats, last_reported_res
+        last_stats = stats
+        res_key = (stats['phone_w'], stats['phone_h'])
+        # Only notify when resolution changes so input is never disrupted
+        if res_key != last_reported_res and stats['phone_w'] > 0:
+            last_reported_res = res_key
+            sys.stdout.write(
+                f"\n  [📹 STREAM ACTIVE] Phone: {stats['phone_w']}x{stats['phone_h']} ➔ Output: {stats['out_w']}x{stats['out_h']} @ {stats['fps']} FPS\n"
+            )
+            sys.stdout.write("easywebcam > ")
+            sys.stdout.flush()
 
     server = EasyWebcamServer(sink=device_mgr, on_stats_update=on_stats)
 
@@ -193,15 +212,14 @@ def main():
     print(f"   {url}")
     print("---------------------------------------------------------")
     print(f"💡 Select '{card_label}' in Discord, OBS, Telegram, or Zoom.")
-    print("💡 Interactive PC commands: Type '720', '1080', '30', '60', 'flip', or 'help'")
-    print("💡 Virtual device will be cleanly removed when you press Ctrl+C or type 'q'.")
+    print("💡 Type 'help' for commands, 'status' for stats, or 'q' to exit.")
     print("---------------------------------------------------------\n")
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     stop_event = threading.Event()
 
-    setup_cli_input_thread(server, loop, stop_event)
+    setup_cli_input_thread(server, loop, stop_event, lambda: last_stats)
 
     app_runner = web.AppRunner(server.app)
     loop.run_until_complete(app_runner.setup())

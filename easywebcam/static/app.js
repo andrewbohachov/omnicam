@@ -1,4 +1,4 @@
-// EasyWebcam WebRTC Client
+// EasyWebcam WebRTC Client - Strict 16:9 Presets (720p & 1080p only)
 const video = document.getElementById('preview');
 const streamBtn = document.getElementById('stream-btn');
 const btnLabel = document.getElementById('btn-label');
@@ -20,10 +20,10 @@ let isStreaming = false;
 let wakeLock = null;
 let torchOn = false;
 
+// ONLY standard 16:9 widescreen resolutions to eliminate perspective distortion
 const RESOLUTIONS = {
   '720': { width: 1280, height: 720 },
-  '1080': { width: 1920, height: 1080 },
-  '4k': { width: 3840, height: 2160 }
+  '1080': { width: 1920, height: 1080 }
 };
 
 // --- Remote Commands Handler ---
@@ -32,7 +32,10 @@ async function handleRemoteCommand(cmd) {
   if (!cmd || !cmd.action) return;
 
   if (cmd.action === "set_res") {
-    await changeResolution(String(cmd.value));
+    const val = String(cmd.value);
+    if (val === "720" || val === "1080") {
+      await changeResolution(val);
+    }
   } else if (cmd.action === "set_fps") {
     await changeFps(parseInt(cmd.value, 10));
   } else if (cmd.action === "flip") {
@@ -43,9 +46,12 @@ async function handleRemoteCommand(cmd) {
 }
 
 async function changeResolution(resChoice) {
+  if (resChoice !== '720' && resChoice !== '1080') {
+    resChoice = '720';
+  }
   resSelect.value = resChoice;
   statRes.textContent = `${resChoice}p`;
-  const target = RESOLUTIONS[resChoice] || RESOLUTIONS['720'];
+  const target = RESOLUTIONS[resChoice];
   const fpsChoice = parseInt(fpsSelect.value, 10);
 
   if (currentTrack) {
@@ -53,6 +59,7 @@ async function changeResolution(resChoice) {
       await currentTrack.applyConstraints({
         width: { ideal: target.width },
         height: { ideal: target.height },
+        aspectRatio: { ideal: 1.7777777778 },
         frameRate: { ideal: fpsChoice, max: fpsChoice }
       });
       console.log("Resolution switched to:", target);
@@ -67,12 +74,16 @@ async function changeResolution(resChoice) {
 async function changeFps(fpsChoice) {
   fpsSelect.value = String(fpsChoice);
   statFps.textContent = `${fpsChoice} FPS`;
-  const resChoice = resSelect.value;
-  const target = RESOLUTIONS[resChoice] || RESOLUTIONS['720'];
+  const resChoice = resSelect.value === '1080' ? '1080' : '720';
+  const target = RESOLUTIONS[resChoice];
 
+  // ALWAYS pass width, height, and aspectRatio to avoid camera resetting to 4:3 (1280x960)!
   if (currentTrack) {
     try {
       await currentTrack.applyConstraints({
+        width: { ideal: target.width },
+        height: { ideal: target.height },
+        aspectRatio: { ideal: 1.7777777778 },
         frameRate: { ideal: fpsChoice, max: fpsChoice }
       });
       console.log("FPS switched to:", fpsChoice);
@@ -90,9 +101,9 @@ async function flipCamera() {
 }
 
 async function reinitCameraTrack() {
-  const resChoice = resSelect.value;
-  const fpsChoice = parseInt(fpsSelect.value, 10);
-  const target = RESOLUTIONS[resChoice] || RESOLUTIONS['720'];
+  const resChoice = resSelect.value === '1080' ? '1080' : '720';
+  const fpsChoice = parseInt(fpsSelect.value, 10) || 30;
+  const target = RESOLUTIONS[resChoice];
 
   statRes.textContent = `${resChoice}p`;
   statFps.textContent = `${fpsChoice} FPS`;
@@ -103,6 +114,7 @@ async function reinitCameraTrack() {
       facingMode: currentFacingMode,
       width: { ideal: target.width },
       height: { ideal: target.height },
+      aspectRatio: { ideal: 1.7777777778 },
       frameRate: { ideal: fpsChoice, max: fpsChoice }
     }
   };
@@ -117,7 +129,6 @@ async function reinitCameraTrack() {
     currentTrack = newTrack;
     video.srcObject = newStream;
 
-    // Hot-swap the video track in WebRTC sender with zero reconnect!
     if (currentSender) {
       await currentSender.replaceTrack(newTrack);
     }
@@ -127,7 +138,7 @@ async function reinitCameraTrack() {
   }
 }
 
-// --- Bulletproof Long-Polling for PC Remote Control ---
+// --- Long-Polling for PC Remote Control ---
 async function startCommandPolling() {
   while (true) {
     try {
@@ -227,9 +238,9 @@ async function startStream() {
       params.encodings = [{}];
     }
     params.degradationPreference = 'maintain-framerate';
-    const fpsChoice = parseInt(fpsSelect.value, 10);
-    const resChoice = resSelect.value;
-    const targetBitrate = resChoice === '4k' ? 8000000 : (resChoice === '1080' ? 4500000 : 2500000);
+    const fpsChoice = parseInt(fpsSelect.value, 10) || 30;
+    const resChoice = resSelect.value === '1080' ? '1080' : '720';
+    const targetBitrate = resChoice === '1080' ? 4500000 : 2500000;
 
     params.encodings[0].maxFramerate = fpsChoice;
     params.encodings[0].maxBitrate = targetBitrate;
