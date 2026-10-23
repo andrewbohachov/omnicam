@@ -23,27 +23,37 @@ OmniCam создаёт виртуальное устройство веб-кам
 
 ---
 
-## Системные требования
-
-Установка `v4l2loopback` и необходимых библиотек в Debian / Ubuntu / Linux Mint:
-```bash
-sudo apt update
-sudo apt install -y v4l2loopback-dkms v4l2loopback-utils libgl1 python3-pip
-```
-
----
-
 ## Установка
 
-Клонируйте репозиторий и установите пакет:
+### Вариант 1: Установка одной командой через cURL (Рекомендуется)
+
+Автоматически проверяет и устанавливает системные пакеты (`v4l2loopback-dkms`), изолированное окружение и регистрирует глобальную команду `omnicam`:
+
 ```bash
+curl -fsSL https://raw.githubusercontent.com/andrewbohachov/omnicam/main/install.sh | bash
+```
+
+### Вариант 2: Готовый deb-пакет для Debian / Ubuntu (.deb)
+
+Скачайте готовый `.deb` пакет и установите через APT (все зависимости ядра и `v4l2loopback-dkms` установятся автоматически):
+
+```bash
+sudo apt install ./omnicam_0.1.0_all.deb
+```
+
+### Вариант 3: Ручная установка из исходников (Git / pip)
+
+```bash
+# 1. Установка системных зависимостей (Debian / Ubuntu / Mint)
+sudo apt update
+sudo apt install -y v4l2loopback-dkms v4l2loopback-utils libgl1 python3-pip python3-venv
+
+# 2. Клонирование репозитория и установка пакета
 git clone https://github.com/andrewbohachov/omnicam.git
 cd omnicam
 pip install -e .
-```
 
-Для глобального доступа к команде `omnicam`:
-```bash
+# 3. Глобальный симлинк
 sudo ln -sf $(which omnicam) /usr/local/bin/omnicam
 ```
 

@@ -23,27 +23,37 @@ OmniCam creates a clean virtual webcam device (`/dev/video0`) on your Linux syst
 
 ---
 
-## Prerequisites
-
-Install `v4l2loopback` and standard tools on Debian / Ubuntu / Linux Mint:
-```bash
-sudo apt update
-sudo apt install -y v4l2loopback-dkms v4l2loopback-utils libgl1 python3-pip
-```
-
----
-
 ## Installation
 
-Clone the repository and install OmniCam:
+### Method 1: Single-Command Shell Installer (Recommended)
+
+Automatically checks and installs system packages (`v4l2loopback-dkms`), configures an isolated environment, and registers the global `omnicam` command:
+
 ```bash
+curl -fsSL https://raw.githubusercontent.com/andrewbohachov/omnicam/main/install.sh | bash
+```
+
+### Method 2: Debian / Ubuntu Package (.deb)
+
+Download the `.deb` package from the repository or Releases and install via APT (system dependencies like `v4l2loopback-dkms` will be resolved automatically):
+
+```bash
+sudo apt install ./omnicam_0.1.0_all.deb
+```
+
+### Method 3: Manual Clone & pip
+
+```bash
+# 1. Install prerequisites (Debian / Ubuntu / Mint)
+sudo apt update
+sudo apt install -y v4l2loopback-dkms v4l2loopback-utils libgl1 python3-pip python3-venv
+
+# 2. Clone repository and install package
 git clone https://github.com/andrewbohachov/omnicam.git
 cd omnicam
 pip install -e .
-```
 
-To make the `omnicam` command available system-wide:
-```bash
+# 3. Global symlink
 sudo ln -sf $(which omnicam) /usr/local/bin/omnicam
 ```
 
