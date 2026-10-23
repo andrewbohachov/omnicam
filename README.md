@@ -1,0 +1,111 @@
+# 🚀 AirCam
+
+> Turn any smartphone (iOS / Android) into a high-performance, low-latency wireless webcam for Linux.  
+> **Zero apps installed on the phone. Clean video only. No audio pollution.**
+
+---
+
+## ⚡ Features
+
+* **Zero Apps on Phone:** Works seamlessly in mobile Safari (iOS) and Chrome (Android). Just scan the QR code.
+* **Pure Video Stream:** Strictly video. Does **not** hijack your audio, create dummy microphones, or mess with ALSA/PipeWire/PulseAudio.
+* **Low Latency (~30–50ms):** Powered by native **WebRTC** with hardware-accelerated H.264/VP8 encoding directly on your phone's SoC.
+* **Full HD 60 FPS:** Supports 1080p60, 720p60, and 4K (depending on device sensor).
+* **Native Linux Webcam:** Pipes frames directly into `/dev/video0` via kernel module `v4l2loopback`. Compatible with **Discord**, **OBS Studio**, **Telegram**, **Zoom**, **Google Meet**, and browser webcams.
+* **Touch-Friendly Mobile UI:**
+  * Flip between front and rear cameras
+  * Resolution & FPS selector
+  * Screen WakeLock (prevents phone screen from turning off)
+  * Flashlight / Torch toggle (on supported devices)
+* **Terminal QR Code:** Instant pairing via ANSI QR code printed right in your terminal.
+* **100% Private & Local:** All communication happens over your local Wi-Fi. No cloud relay, no external servers.
+
+---
+
+## 📋 Prerequisites
+
+AirCam requires `v4l2loopback` and Python 3.9+:
+
+### Ubuntu / Debian:
+```bash
+sudo apt update
+sudo apt install -y v4l2loopback-dkms v4l-utils python3 python3-venv
+```
+
+### Arch Linux / Manjaro:
+```bash
+sudo pacman -S v4l2loopback-dkms v4l-utils python
+```
+
+---
+
+## 🚀 Quick Start
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/aircam.git
+   cd aircam
+   ```
+
+2. **Run AirCam:**
+   ```bash
+   ./run.sh
+   ```
+
+3. **Connect Your Phone:**
+   * An ANSI QR code will appear in your terminal.
+   * Point your phone's camera at the QR code to open the local link.
+   * On your phone, tap **"Proceed"** (for local self-signed HTTPS) and tap **"Allow"** for camera access.
+   * Tap **"START STREAM"**.
+
+4. **Select in Apps:**
+   * Open **Discord**, **OBS**, or **Telegram**.
+   * Choose **"AirCam (Wireless)"** (or `/dev/video0`) in your video settings.
+
+---
+
+## ⚙️ Options
+
+```bash
+./run.sh [OPTIONS]
+
+Options:
+  -p, --port PORT      HTTPS server port (default: 8443)
+  -d, --device DEVICE  V4L2 loopback device (default: /dev/video0)
+  --ip IP              Manually specify local IP if multiple network interfaces exist
+  -h, --help           Show help message
+```
+
+---
+
+## 🔒 Why HTTPS & Self-Signed Certs?
+
+Modern mobile browsers (Chrome on Android, Safari on iOS) strictly restrict camera access (`getUserMedia`) to secure contexts (`https://` or `localhost`). 
+
+AirCam automatically generates an ephemeral, local self-signed certificate with your local LAN IP included in the Subject Alternative Name (SAN). The first time you connect, simply tap **Advanced → Proceed** in your mobile browser.
+
+---
+
+## 🛠️ Architecture
+
+```
+[ Phone Camera (iOS / Android) ]
+              │
+              ▼ (Native WebRTC Hardware H.264 Encoder)
+       [ Local Wi-Fi (UDP) ]
+              │
+              ▼
+   [ AirCam Receiver (PyAV) ]
+              │
+              ▼ (YUYV 4:2:2 Raw Video Frames)
+   [ Linux Kernel: /dev/video0 (v4l2loopback) ]
+              │
+              ▼
+[ Discord / OBS / Zoom / Chrome ]
+```
+
+---
+
+## 📄 License
+
+MIT License. Free and open source.
