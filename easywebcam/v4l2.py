@@ -17,7 +17,7 @@ class V4L2DeviceManager:
         self.target_height = height
         self.pixel_format = "YUYV"
         self._fd: Optional[int] = None
-        self._we_loaded_module = False
+        self._keep_device = False
 
     def is_module_loaded(self) -> bool:
         """Checks if v4l2loopback kernel module is currently loaded."""
@@ -40,7 +40,6 @@ class V4L2DeviceManager:
                     check=True,
                     capture_output=True
                 )
-                self._we_loaded_module = True
                 for _ in range(20):
                     if os.path.exists(self.device):
                         break
@@ -49,7 +48,7 @@ class V4L2DeviceManager:
                 print(f"[!] Error loading v4l2loopback: {e}")
                 return False
         else:
-            print(f"[*] Using existing v4l2loopback module on {self.device}...")
+            print(f"[*] Virtual webcam module active on {self.device}...")
 
         if not os.path.exists(self.device):
             import glob
@@ -60,7 +59,6 @@ class V4L2DeviceManager:
                 print(f"[!] Failed to find created video device.")
                 return False
 
-        # Ensure user can read/write to the device without sudo
         try:
             subprocess.run(["sudo", "chmod", "666", self.device], check=False, capture_output=True)
         except Exception:
@@ -125,12 +123,25 @@ class V4L2DeviceManager:
                 pass
             self._fd = None
 
-        if self._we_loaded_module:
-            print(f"\n[*] Cleaning up: Removing {self.device} from system...")
-            try:
-                time.sleep(0.2)
-                subprocess.run(["sudo", "modprobe", "-r", "v4l2loopback"], check=False, capture_output=True)
-                print(f"[✓] Virtual webcam device removed. System clean.")
-            except Exception as e:
-                print(f"[!] Warning during module unload: {e}")
-            self._we_loaded_module = False
+        if self._keep_device:
+            return
+
+        print(f"\n[*] Cleaning up: Removing {self.device} from system...")
+        time.sleep(0.2)
+        res = subprocess.run(["sudo", "modprobe", "-r", "v4l2loopback"], capture_output=True, text=True)
+        if res.returncode == 0:
+            print(f"[✓] Virtual webcam device removed. System clean.")
+        else:
+            # Check if an external application is locking the device
+            fuser_res = subprocess.run(["fuser", self.device], capture_output=True, text=True).stdout.strip()
+            if fuser_res:
+                print(f"[!] Notice: {self.device} is currently kept open by PID {fuser_res} (e.g. Discord camera preview).")
+                print(f"    Once you close the camera preview in that app, the device will be released.")
+            else:
+                # Retry once
+                time.sleep(0.5)
+                retry_res = subprocess.run(["sudo", "modprobe", "-r", "v4l2loopback"], capture_output=True, text=True)
+                if retry_res.returncode == 0:
+                    print(f"[✓] Virtual webcam device removed. System clean.")
+                else:
+                    print(f"[!] Info: {retry_res.stderr.strip()}")

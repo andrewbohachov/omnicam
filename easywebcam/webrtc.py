@@ -2,12 +2,12 @@
 EasyWebcam - WebRTC Session & Frame Pipeline
 Decouples network receiving from V4L2 writing via a non-blocking queue.
 Enforces fixed output dimension and stride, eliminating scanline wrapping/stride artifacts.
-Includes Python 3.14 asyncio compatibility patches for aioice/aiortc.
+Tracks actual phone camera resolution and supports bidirectional remote control.
 """
 
 import asyncio
 import time
-import sys
+import json
 from typing import Optional, Callable
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, MediaStreamTrack
 from aiortc.rtcrtpreceiver import RTCRtpReceiver
@@ -57,12 +57,15 @@ class WebRTCSession:
         self.target_width = sink.target_width
         self.target_height = sink.target_height
         self.pc: Optional[RTCPeerConnection] = None
+        self.channel = None
         self.on_stats_update = on_stats_update
         self.is_active = False
         self.fps = 0.0
         self.total_frames = 0
         self._frame_count = 0
         self._last_fps_time = time.time()
+        self._last_phone_w = 0
+        self._last_phone_h = 0
         self._frame_queue: asyncio.Queue = asyncio.Queue(maxsize=1)
         self._writer_task: Optional[asyncio.Task] = None
 
@@ -75,6 +78,12 @@ class WebRTCSession:
         self.pc = RTCPeerConnection(configuration=config)
         self.is_active = True
         self._frame_queue = asyncio.Queue(maxsize=1)
+
+        # Create control DataChannel to send commands to the phone
+        try:
+            self.channel = self.pc.createDataChannel("control")
+        except Exception:
+            self.channel = None
 
         # Prioritize hardware-accelerated H.264 video codec
         try:
@@ -109,6 +118,17 @@ class WebRTCSession:
             "type": self.pc.localDescription.type
         }
 
+    def send_control_command(self, action: str, value=None) -> bool:
+        """Sends control message to the phone via WebRTC DataChannel."""
+        if self.channel and self.channel.readyState == "open":
+            try:
+                payload = json.dumps({"action": action, "value": value})
+                self.channel.send(payload)
+                return True
+            except Exception:
+                pass
+        return False
+
     async def _network_receiver_loop(self, track: MediaStreamTrack):
         """
         Dedicated network loop: Reads packets from the WebRTC socket with zero delay.
@@ -140,9 +160,10 @@ class WebRTCSession:
         try:
             while self.is_active:
                 in_frame = await self._frame_queue.get()
+                self._last_phone_w = in_frame.width
+                self._last_phone_h = in_frame.height
 
                 # Always scale and reformat to fixed device resolution (e.g. 1920x1080 YUYV)
-                # This guarantees that the reader (Discord) never suffers stride or scanline mismatches!
                 out_frame = in_frame.reformat(
                     width=self.target_width,
                     height=self.target_height,
@@ -153,7 +174,6 @@ class WebRTCSession:
                 if plane.line_size == expected_line_size:
                     raw_bytes = bytes(plane)
                 else:
-                    # Strip any row padding added by FFmpeg alignment
                     raw_plane = bytes(plane)
                     raw_bytes = b"".join(
                         raw_plane[i * plane.line_size : i * plane.line_size + expected_line_size]
@@ -173,8 +193,10 @@ class WebRTCSession:
                     if self.on_stats_update:
                         self.on_stats_update({
                             "fps": self.fps,
-                            "width": self.target_width,
-                            "height": self.target_height,
+                            "phone_w": self._last_phone_w,
+                            "phone_h": self._last_phone_h,
+                            "out_w": self.target_width,
+                            "out_h": self.target_height,
                             "frames": self.total_frames
                         })
         except Exception:
@@ -194,3 +216,4 @@ class WebRTCSession:
             except Exception:
                 pass
             self.pc = None
+            self.channel = None

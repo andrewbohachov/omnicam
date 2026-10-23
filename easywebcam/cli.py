@@ -1,12 +1,13 @@
 """
 EasyWebcam CLI Entry Point
 Finds network IP, sets up virtual webcam, prints ANSI QR code, and starts the server.
-Cleans up and removes the virtual webcam device on shutdown.
+Includes interactive CLI commands to control resolution, FPS, and camera flip from the PC.
 """
 
 import sys
 import ssl
 import socket
+import threading
 import argparse
 import asyncio
 from aiohttp import web
@@ -87,6 +88,60 @@ def parse_args():
     )
     return parser.parse_args()
 
+def setup_cli_input_thread(server: EasyWebcamServer, loop: asyncio.AbstractEventLoop, stop_event: threading.Event):
+    """Reads interactive terminal commands from the user while streaming."""
+    def input_worker():
+        while not stop_event.is_set():
+            try:
+                line = sys.stdin.readline()
+                if not line:
+                    break
+                cmd = line.strip().lower()
+                if not cmd:
+                    continue
+
+                if cmd in ["720", "res 720", "720p"]:
+                    print("\n[🎮 REMOTE] Switching phone camera to 720p...")
+                    asyncio.run_coroutine_threadsafe(server.broadcast_command("set_res", "720"), loop)
+                elif cmd in ["1080", "res 1080", "1080p"]:
+                    print("\n[🎮 REMOTE] Switching phone camera to 1080p...")
+                    asyncio.run_coroutine_threadsafe(server.broadcast_command("set_res", "1080"), loop)
+                elif cmd in ["4k", "res 4k", "2160"]:
+                    print("\n[🎮 REMOTE] Switching phone camera to 4K...")
+                    asyncio.run_coroutine_threadsafe(server.broadcast_command("set_res", "4k"), loop)
+                elif cmd in ["30", "fps 30", "30fps"]:
+                    print("\n[🎮 REMOTE] Setting phone framerate to 30 FPS...")
+                    asyncio.run_coroutine_threadsafe(server.broadcast_command("set_fps", 30), loop)
+                elif cmd in ["60", "fps 60", "60fps"]:
+                    print("\n[🎮 REMOTE] Setting phone framerate to 60 FPS...")
+                    asyncio.run_coroutine_threadsafe(server.broadcast_command("set_fps", 60), loop)
+                elif cmd in ["f", "flip", "cam"]:
+                    print("\n[🎮 REMOTE] Flipping camera (Front ⇄ Rear)...")
+                    asyncio.run_coroutine_threadsafe(server.broadcast_command("flip"), loop)
+                elif cmd in ["t", "torch", "flash"]:
+                    print("\n[🎮 REMOTE] Toggling flashlight...")
+                    asyncio.run_coroutine_threadsafe(server.broadcast_command("torch"), loop)
+                elif cmd in ["h", "help", "?"]:
+                    print("\n--- [🎮 Interactive Commands] ---")
+                    print("  720 / 1080 / 4k : Change resolution")
+                    print("  30 / 60         : Change FPS")
+                    print("  f / flip        : Switch Front / Rear camera")
+                    print("  t / torch       : Toggle Flashlight")
+                    print("  q / quit        : Exit EasyWebcam")
+                    print("---------------------------------\n")
+                elif cmd in ["q", "quit", "exit"]:
+                    print("\n[*] Exiting...")
+                    loop.call_soon_threadsafe(loop.stop)
+                    break
+                else:
+                    print(f"\n[!] Unknown command: '{cmd}'. Type 'help' for options.")
+            except Exception:
+                break
+
+    t = threading.Thread(target=input_worker, daemon=True)
+    t.start()
+    return t
+
 def main():
     args = parse_args()
     local_ip = args.ip or get_primary_local_ip()
@@ -100,14 +155,14 @@ def main():
     print(f"  📷 EasyWebcam — Phone Webcam for Linux")
     print("=========================================================")
 
-    # Initialize and dynamically create the virtual webcam device with fixed resolution
+    # Initialize device manager
     device_mgr = V4L2DeviceManager(device=device, card_label=card_label, width=width, height=height)
     if not device_mgr.start():
         print(f"[!] Critical: Could not initialize {device} via v4l2loopback.")
         sys.exit(1)
 
     if args.keep_device:
-        device_mgr._we_loaded_module = False
+        device_mgr._keep_device = True
 
     # Generate or retrieve SSL Cert
     print("[*] Generating local SSL certificate...")
@@ -118,7 +173,8 @@ def main():
 
     def on_stats(stats):
         sys.stdout.write(
-            f"\r[📹 STREAMING] {stats['width']}x{stats['height']} | "
+            f"\r[📹 STREAMING] Phone: {stats['phone_w']}x{stats['phone_h']} | "
+            f"Output: {stats['out_w']}x{stats['out_h']} | "
             f"FPS: {stats['fps']} | Total Frames: {stats['frames']}   "
         )
         sys.stdout.flush()
@@ -137,16 +193,29 @@ def main():
     print(f"   {url}")
     print("---------------------------------------------------------")
     print(f"💡 Select '{card_label}' in Discord, OBS, Telegram, or Zoom.")
-    print(f"💡 Output locked to {width}x{height} (prevents stride/banding artifacts).")
-    print("💡 Virtual device will be cleanly removed when you press Ctrl+C.")
+    print("💡 Interactive PC commands: Type '720', '1080', '30', '60', 'flip', or 'help'")
+    print("💡 Virtual device will be cleanly removed when you press Ctrl+C or type 'q'.")
     print("---------------------------------------------------------\n")
 
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    stop_event = threading.Event()
+
+    setup_cli_input_thread(server, loop, stop_event)
+
+    app_runner = web.AppRunner(server.app)
+    loop.run_until_complete(app_runner.setup())
+    site = web.TCPSite(app_runner, host="0.0.0.0", port=port, ssl_context=ssl_context)
+    loop.run_until_complete(site.start())
+
     try:
-        web.run_app(server.app, host="0.0.0.0", port=port, ssl_context=ssl_context, print=None)
+        loop.run_forever()
     except (KeyboardInterrupt, SystemExit):
-        print("\n[*] Stopping EasyWebcam...")
+        pass
     finally:
-        asyncio.run(server.cleanup())
+        stop_event.set()
+        loop.run_until_complete(app_runner.cleanup())
+        loop.run_until_complete(server.cleanup())
         print("[*] Goodbye!")
 
 if __name__ == "__main__":

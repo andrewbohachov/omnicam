@@ -1,4 +1,4 @@
-// EasyWebcam WebRTC Client
+// EasyWebcam WebRTC Client with Bidirectional Remote Control
 const video = document.getElementById('preview');
 const streamBtn = document.getElementById('stream-btn');
 const btnLabel = document.getElementById('btn-label');
@@ -12,8 +12,10 @@ const statRes = document.getElementById('stat-res');
 const statFps = document.getElementById('stat-fps');
 
 let pc = null;
+let controlChannel = null;
+let ws = null;
 let localStream = null;
-let currentFacingMode = 'environment'; // default to back camera
+let currentFacingMode = 'environment';
 let isStreaming = false;
 let wakeLock = null;
 let torchOn = false;
@@ -23,6 +25,56 @@ const RESOLUTIONS = {
   '1080': { width: 1920, height: 1080 },
   '4k': { width: 3840, height: 2160 }
 };
+
+function handleRemoteCommand(cmd) {
+  console.log("Remote command received from PC:", cmd);
+  if (!cmd || !cmd.action) return;
+
+  if (cmd.action === "set_res") {
+    resSelect.value = String(cmd.value);
+    initCamera().then(() => {
+      if (isStreaming) {
+        stopStream();
+        startStream();
+      }
+    });
+  } else if (cmd.action === "set_fps") {
+    fpsSelect.value = String(cmd.value);
+    initCamera().then(() => {
+      if (isStreaming) {
+        stopStream();
+        startStream();
+      }
+    });
+  } else if (cmd.action === "flip") {
+    currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+    initCamera().then(() => {
+      if (isStreaming) {
+        stopStream();
+        startStream();
+      }
+    });
+  } else if (cmd.action === "torch") {
+    toggleTorch();
+  }
+}
+
+function initWebSocketControl() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/ws`;
+  try {
+    ws = new WebSocket(wsUrl);
+    ws.onmessage = (event) => {
+      try {
+        const cmd = JSON.parse(event.data);
+        handleRemoteCommand(cmd);
+      } catch (e) {}
+    };
+    ws.onclose = () => {
+      setTimeout(initWebSocketControl, 2000);
+    };
+  } catch (e) {}
+}
 
 async function initCamera() {
   if (localStream) {
@@ -37,12 +89,12 @@ async function initCamera() {
   statFps.textContent = `${fpsChoice} FPS`;
 
   const constraints = {
-    audio: false, // STRICTLY NO AUDIO
+    audio: false,
     video: {
       facingMode: currentFacingMode,
       width: { ideal: target.width },
       height: { ideal: target.height },
-      frameRate: { ideal: fpsChoice, min: 24, max: fpsChoice }
+      frameRate: { ideal: fpsChoice, min: 20, max: fpsChoice }
     }
   };
 
@@ -51,7 +103,7 @@ async function initCamera() {
     video.srcObject = localStream;
     checkTorchSupport();
   } catch (err) {
-    alert("Camera Access Error: " + err.message);
+    console.error("Camera Access Error:", err);
   }
 }
 
@@ -85,9 +137,7 @@ async function requestWakeLock() {
     if ('wakeLock' in navigator) {
       wakeLock = await navigator.wakeLock.request('screen');
     }
-  } catch (err) {
-    console.log("WakeLock error:", err);
-  }
+  } catch (err) {}
 }
 
 function releaseWakeLock() {
@@ -103,9 +153,17 @@ async function startStream() {
   }
 
   statusText.textContent = "CONNECTING...";
-  
-  // Clean WebRTC setup with LAN-only config
   pc = new RTCPeerConnection({ iceServers: [] });
+
+  pc.ondatachannel = (event) => {
+    controlChannel = event.channel;
+    controlChannel.onmessage = (e) => {
+      try {
+        const cmd = JSON.parse(e.data);
+        handleRemoteCommand(cmd);
+      } catch (err) {}
+    };
+  };
 
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
@@ -123,7 +181,6 @@ async function startStream() {
   const track = localStream.getVideoTracks()[0];
   const sender = pc.addTrack(track, localStream);
 
-  // Tell browser's encoder: prioritize framerate and smooth bitrate to prevent packet drops
   try {
     const params = sender.getParameters();
     if (!params.encodings || params.encodings.length === 0) {
@@ -133,13 +190,11 @@ async function startStream() {
     const fpsChoice = parseInt(fpsSelect.value, 10);
     const resChoice = resSelect.value;
     const targetBitrate = resChoice === '4k' ? 8000000 : (resChoice === '1080' ? 4500000 : 2500000);
-    
+
     params.encodings[0].maxFramerate = fpsChoice;
     params.encodings[0].maxBitrate = targetBitrate;
     await sender.setParameters(params);
-  } catch (e) {
-    console.log("Sender parameters notice:", e);
-  }
+  } catch (e) {}
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
@@ -212,4 +267,5 @@ fpsSelect.addEventListener('change', async () => {
 
 window.addEventListener('DOMContentLoaded', () => {
   initCamera();
+  initWebSocketControl();
 });
