@@ -1,5 +1,5 @@
 """
-EasyWebcam - V4L2 Loopback Dynamic Lifecycle Manager
+OmniCam - V4L2 Loopback Dynamic Lifecycle Manager
 Creates the virtual webcam device on startup and removes it cleanly on shutdown.
 Enforces fixed, standard resolution and stride to prevent horizontal banding/artifacts.
 """
@@ -10,7 +10,7 @@ import time
 from typing import Optional
 
 class V4L2DeviceManager:
-    def __init__(self, device: Optional[str] = None, card_label: str = "EasyWebcam", width: int = 1920, height: int = 1080):
+    def __init__(self, device: Optional[str] = None, card_label: str = "OmniCam", width: int = 1920, height: int = 1080):
         self.device = device or "/dev/video0"
         self.card_label = card_label
         self.target_width = width
@@ -132,13 +132,11 @@ class V4L2DeviceManager:
         if res.returncode == 0:
             print(f"[✓] Virtual webcam device removed. System clean.")
         else:
-            # Check if an external application is locking the device
             fuser_res = subprocess.run(["fuser", self.device], capture_output=True, text=True).stdout.strip()
             if fuser_res:
                 print(f"[!] Notice: {self.device} is currently kept open by PID {fuser_res} (e.g. Discord camera preview).")
                 print(f"    Once you close the camera preview in that app, the device will be released.")
             else:
-                # Retry once
                 time.sleep(0.5)
                 retry_res = subprocess.run(["sudo", "modprobe", "-r", "v4l2loopback"], capture_output=True, text=True)
                 if retry_res.returncode == 0:

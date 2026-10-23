@@ -1,5 +1,5 @@
 """
-EasyWebcam CLI Entry Point
+OmniCam CLI Entry Point
 Finds network IP, sets up virtual webcam, prints ANSI QR code, and starts the server.
 Includes interactive CLI commands to control resolution, FPS, and camera flip from the PC.
 Provides a clean, non-overwriting terminal prompt.
@@ -15,7 +15,7 @@ from aiohttp import web
 import qrcode
 from .cert import get_or_create_ssl_cert
 from .v4l2 import V4L2DeviceManager
-from .server import EasyWebcamServer
+from .server import OmniCamServer
 
 def get_primary_local_ip() -> str:
     """Finds the primary local LAN IP connected to default gateway."""
@@ -43,8 +43,8 @@ def print_qr_code(url: str):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        prog="easywebcam",
-        description="EasyWebcam: Turn your smartphone into a clean, zero-lag Linux webcam with zero apps on phone."
+        prog="omnicam",
+        description="OmniCam: Turn your smartphone into a clean, zero-lag Linux webcam with zero apps on phone."
     )
     parser.add_argument(
         "-p", "--port",
@@ -61,8 +61,8 @@ def parse_args():
     parser.add_argument(
         "-l", "--label",
         type=str,
-        default="EasyWebcam",
-        help="Webcam name shown in Discord/OBS/browsers (default: EasyWebcam)"
+        default="OmniCam",
+        help="Webcam name shown in Discord/OBS/browsers (default: OmniCam)"
     )
     parser.add_argument(
         "-r", "--res", "--resolution",
@@ -96,19 +96,18 @@ def parse_args():
     )
     return parser.parse_args()
 
-def setup_cli_input_thread(server: EasyWebcamServer, loop: asyncio.AbstractEventLoop, stop_event: threading.Event, get_last_stats):
+def setup_cli_input_thread(server: OmniCamServer, loop: asyncio.AbstractEventLoop, stop_event: threading.Event, get_last_stats):
     """Reads interactive terminal commands from the user without overwriting input."""
     def input_worker():
         while not stop_event.is_set():
             try:
-                sys.stdout.write("easywebcam > ")
+                sys.stdout.write("omnicam > ")
                 sys.stdout.flush()
                 line = sys.stdin.readline()
                 if not line:
                     break
                 cmd = line.strip().lower()
                 if not cmd:
-                    # Hitting Enter shows current status
                     stats = get_last_stats()
                     if stats and stats.get("frames", 0) > 0:
                         print(f"  [📹 STATUS] Phone: {stats['phone_w']}x{stats['phone_h']} | Output: {stats['out_w']}x{stats['out_h']} | FPS: {stats['fps']} | Total Frames: {stats['frames']}")
@@ -145,7 +144,7 @@ def setup_cli_input_thread(server: EasyWebcamServer, loop: asyncio.AbstractEvent
                     print("  f / flip     : Switch Front / Rear camera")
                     print("  t / torch    : Toggle Flashlight")
                     print("  s / status   : Show current stream status & FPS")
-                    print("  q / quit     : Exit EasyWebcam cleanly")
+                    print("  q / quit     : Exit OmniCam cleanly")
                     print("---------------------------------\n")
                 elif cmd in ["q", "quit", "exit"]:
                     print("\n[*] Exiting...")
@@ -178,7 +177,7 @@ def main():
         height = args.height
 
     print("=========================================================")
-    print(f"  📷 EasyWebcam — Phone Webcam for Linux")
+    print(f"  📷 OmniCam — Phone Webcam for Linux")
     print("=========================================================")
 
     # Initialize device manager
@@ -204,16 +203,15 @@ def main():
         nonlocal last_stats, last_reported_res
         last_stats = stats
         res_key = (stats['phone_w'], stats['phone_h'])
-        # Only notify when resolution changes so input is never disrupted
         if res_key != last_reported_res and stats['phone_w'] > 0:
             last_reported_res = res_key
             sys.stdout.write(
                 f"\n  [📹 STREAM ACTIVE] Phone: {stats['phone_w']}x{stats['phone_h']} ➔ Output: {stats['out_w']}x{stats['out_h']} @ {stats['fps']} FPS\n"
             )
-            sys.stdout.write("easywebcam > ")
+            sys.stdout.write("omnicam > ")
             sys.stdout.flush()
 
-    server = EasyWebcamServer(sink=device_mgr, on_stats_update=on_stats)
+    server = OmniCamServer(sink=device_mgr, on_stats_update=on_stats)
 
     url = f"https://{local_ip}:{port}"
     print("\n---------------------------------------------------------")

@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "easywebcam"
+name = "omnicam"
 version = "0.1.0"
 description = "Turn any smartphone into a wireless Linux webcam (zero apps on phone, clean video only)."
 readme = "README.md"
@@ -20,4 +20,4 @@ dependencies = [
 ]
 
 [project.scripts]
-easywebcam = "easywebcam.cli:main"
+omnicam = "omnicam.cli:main"

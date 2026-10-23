@@ -1,5 +1,5 @@
 """
-EasyWebcam - Local Web Server & Signaling
+OmniCam - Local Web Server & Signaling
 Serves mobile web client over HTTPS, coordinates WebRTC signaling,
 and maintains instant command delivery to the smartphone.
 """
@@ -13,7 +13,7 @@ from .webrtc import WebRTCSession
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-class EasyWebcamServer:
+class OmniCamServer:
     def __init__(self, sink: V4L2DeviceManager, on_stats_update=None):
         self.sink = sink
         self.session = WebRTCSession(sink, on_stats_update=on_stats_update)
@@ -51,10 +51,7 @@ class EasyWebcamServer:
 
     async def broadcast_command(self, action: str, value=None):
         """Delivers command via WebRTC DataChannel AND instant HTTP polling."""
-        # Send via DataChannel if open
         self.session.send_control_command(action, value)
-
-        # Queue for immediate HTTP long-poll retrieval
         await self.command_queue.put({"action": action, "value": value})
 
     async def cleanup(self):

@@ -1,5 +1,5 @@
 """
-EasyWebcam - WebRTC Session & Frame Pipeline
+OmniCam - WebRTC Session & Frame Pipeline
 Decouples network receiving from V4L2 writing via a non-blocking queue.
 Enforces fixed output dimension and stride with intelligent Aspect-Fit (Pillarboxing/Letterboxing),
 guaranteeing 100% natural, undistorted proportions in both Horizontal and Vertical orientations.

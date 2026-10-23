@@ -1,5 +1,5 @@
 """
-EasyWebcam - SSL Certificate Generator
+OmniCam - SSL Certificate Generator
 Generates self-signed certificates with SAN IP extension for local network HTTPS.
 Mobile browsers require HTTPS to grant camera permissions.
 """
@@ -13,7 +13,7 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-CONFIG_DIR = Path.home() / ".config" / "easywebcam"
+CONFIG_DIR = Path.home() / ".config" / "omnicam"
 
 def get_or_create_ssl_cert(local_ip: str) -> tuple[str, str]:
     """
@@ -34,7 +34,7 @@ def get_or_create_ssl_cert(local_ip: str) -> tuple[str, str]:
     ip_obj = ipaddress.ip_address(local_ip)
     subject = issuer = x509.Name([
         x509.NameAttribute(NameOID.COUNTRY_NAME, "RU"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "EasyWebcam"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "OmniCam"),
         x509.NameAttribute(NameOID.COMMON_NAME, local_ip),
     ])
 

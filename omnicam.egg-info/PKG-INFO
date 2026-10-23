@@ -1,5 +1,5 @@
 Metadata-Version: 2.4
-Name: easywebcam
+Name: omnicam
 Version: 0.1.0
 Summary: Turn any smartphone into a wireless Linux webcam (zero apps on phone, clean video only).
 Author: Chelsea
@@ -11,7 +11,7 @@ Requires-Dist: av>=12.0.0
 Requires-Dist: cryptography>=42.0.0
 Requires-Dist: qrcode>=7.4.0
 
-# 📷 EasyWebcam
+# 📷 OmniCam
 
 > Turn any smartphone (iOS / Android) into a high-performance wireless Linux webcam.  
 > **Zero apps installed on the phone. Clean video only. Interactive remote control from PC.**
@@ -20,8 +20,9 @@ Requires-Dist: qrcode>=7.4.0
 
 ## ⚡ Highlights
 
-* **Global CLI Utility:** Run `easywebcam` directly from any terminal.
-* **Interactive PC Remote Control:** Change resolution (`720`, `1080`, `4k`), change FPS (`30`, `60`), or flip camera (`f` / `flip`) directly from your Linux keyboard while streaming!
+* **Global CLI Utility:** Run `omnicam` directly from any terminal.
+* **Interactive PC Remote Control:** Change resolution (`720`, `1080`), change FPS (`30`, `60`), or flip camera (`f` / `flip`) directly from your Linux keyboard while streaming!
+* **Aspect-Fit Guarantee:** Perfect 16:9 widescreen in landscape; clean, undistorted pillarboxing in portrait orientation.
 * **Accurate HUD & Diagnostics:** Displays both the phone's native capture resolution and the normalized output resolution in real-time.
 * **Clean Hardware Lifecycle:** Creates the virtual camera `/dev/video0` on startup and unloads it on shutdown.
 * **Zero Apps on Phone:** Works in Safari (iOS) and Chrome (Android). Just scan the terminal QR code.
@@ -35,18 +36,18 @@ Requires-Dist: qrcode>=7.4.0
 In any terminal:
 
 ```bash
-easywebcam
+omnicam
 ```
 
 1. Scan the **ANSI QR code** with your phone's camera.
 2. Tap **"START STREAM"** on your phone.
-3. In Discord, OBS, or Telegram, select **"EasyWebcam"**.
+3. In Discord, OBS, or Telegram, select **"OmniCam"**.
 
 ---
 
 ## 🎮 Interactive Terminal Commands
 
-While streaming, you can type commands directly into the Linux terminal:
+While streaming, you can type commands directly into the Linux terminal at the `omnicam > ` prompt:
 
 | Command | Action |
 | :--- | :--- |
@@ -63,13 +64,13 @@ While streaming, you can type commands directly into the Linux terminal:
 ## ⚙️ Options & Arguments
 
 ```bash
-easywebcam [OPTIONS]
+omnicam [OPTIONS]
 
 Options:
   -r, --res RES        Webcam output resolution: 1080 or 720 (default: 1080)
   -p, --port PORT      HTTPS server port (default: 8443)
   -d, --device DEVICE  V4L2 target device (default: /dev/video0)
-  -l, --label LABEL    Device display name (default: EasyWebcam)
+  -l, --label LABEL    Device display name (default: OmniCam)
   --ip IP              Manual local IP override
   --keep-device        Do not unload v4l2loopback on shutdown
   -h, --help           Show help message
@@ -78,13 +79,13 @@ Options:
 ### Examples:
 ```bash
 # Default: 1080p Full HD output
-easywebcam
+omnicam
 
 # Launch with 720p output for lighter load / slower Wi-Fi
-easywebcam -r 720
+omnicam -r 720
 
 # Run with custom camera name
-easywebcam -r 1080 -l "Pixel 8 Pro Cam"
+omnicam -r 1080 -l "Pixel 8 Pro Cam"
 ```
 
 ---

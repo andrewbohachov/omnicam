@@ -1,4 +1,4 @@
-// EasyWebcam WebRTC Client - Strict 16:9 Presets (720p & 1080p only)
+// OmniCam WebRTC Client - Strict 16:9 Presets (720p & 1080p only)
 const video = document.getElementById('preview');
 const streamBtn = document.getElementById('stream-btn');
 const btnLabel = document.getElementById('btn-label');
