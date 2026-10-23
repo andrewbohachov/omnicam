@@ -14,61 +14,48 @@ Requires-Dist: qrcode>=7.4.0
 # 📷 EasyWebcam
 
 > Turn any smartphone (iOS / Android) into a high-performance wireless Linux webcam.  
-> **Zero apps installed on the phone. Clean video only. No audio cables. No ghost devices.**
+> **Zero apps installed on the phone. Clean video only. Interactive remote control from PC.**
 
 ---
 
 ## ⚡ Highlights
 
 * **Global CLI Utility:** Run `easywebcam` directly from any terminal.
-* **Ephemeral Virtual Camera:** The virtual `/dev/video0` device is created on launch and **completely removed from the OS on exit**. Zero leftover virtual devices.
+* **Interactive PC Remote Control:** Change resolution (`720`, `1080`, `4k`), change FPS (`30`, `60`), or flip camera (`f` / `flip`) directly from your Linux keyboard while streaming!
+* **Accurate HUD & Diagnostics:** Displays both the phone's native capture resolution and the normalized output resolution in real-time.
+* **Clean Hardware Lifecycle:** Creates the virtual camera `/dev/video0` on startup and unloads it on shutdown.
 * **Zero Apps on Phone:** Works in Safari (iOS) and Chrome (Android). Just scan the terminal QR code.
 * **Strictly Video Only:** No virtual sound cards, no PulseAudio/PipeWire sink pollution.
 * **Low Latency (~30–50ms):** Native hardware-accelerated **WebRTC** (H.264/VP8) streaming directly over your local Wi-Fi.
-* **Full HD 60 FPS:** 1080p, 720p, and 4K support.
-* **Universal Linux Support:** Shows up as **"EasyWebcam"** in **Discord**, **OBS Studio**, **Telegram**, **Zoom**, **Google Meet**, etc.
 
 ---
 
 ## 🚀 Quick Usage
 
-In any terminal, simply run:
+In any terminal:
 
 ```bash
 easywebcam
 ```
 
-1. An **ANSI QR code** will appear directly in your terminal.
-2. Point your phone camera at the QR code to open the link.
-3. On your phone: tap **"Proceed"** (for local HTTPS) and **"Allow"** for camera access.
-4. Tap **"START STREAM"**.
-5. In Discord, OBS, or Telegram, select **"EasyWebcam"**.
-6. When done, press `Ctrl+C` in the terminal — the virtual camera device will automatically be removed from your system.
+1. Scan the **ANSI QR code** with your phone's camera.
+2. Tap **"START STREAM"** on your phone.
+3. In Discord, OBS, or Telegram, select **"EasyWebcam"**.
 
 ---
 
-## ⚙️ Options & Arguments
+## 🎮 Interactive Terminal Commands
 
-```bash
-easywebcam [OPTIONS]
+While streaming, you can type commands directly into the Linux terminal:
 
-Options:
-  -p, --port PORT      HTTPS server port (default: 8443)
-  -d, --device DEVICE  V4L2 target device (default: /dev/video0)
-  -l, --label LABEL    Device display name (default: EasyWebcam)
-  --ip IP              Manual local IP override
-  --keep-device        Do not unload v4l2loopback on shutdown
-  -h, --help           Show help message
-```
-
-### Examples:
-```bash
-# Run on custom port
-easywebcam -p 9000
-
-# Set custom webcam label shown in apps
-easywebcam -l "iPhone 15 Pro Cam"
-```
+| Command | Action |
+| :--- | :--- |
+| `720` / `1080` / `4k` | Switch phone camera resolution on the fly |
+| `30` / `60` | Change target framerate |
+| `f` or `flip` | Flip between Front (Selfie) and Rear camera |
+| `t` or `torch` | Toggle phone flashlight (where supported) |
+| `h` or `help` | Show commands cheat sheet |
+| `q` or `quit` | Stop stream and clean up device |
 
 ---
 

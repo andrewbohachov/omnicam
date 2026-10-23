@@ -1,4 +1,4 @@
-// EasyWebcam WebRTC Client with Bidirectional Remote Control
+// EasyWebcam WebRTC Client
 const video = document.getElementById('preview');
 const streamBtn = document.getElementById('stream-btn');
 const btnLabel = document.getElementById('btn-label');
@@ -12,9 +12,9 @@ const statRes = document.getElementById('stat-res');
 const statFps = document.getElementById('stat-fps');
 
 let pc = null;
+let currentTrack = null;
+let currentSender = null;
 let controlChannel = null;
-let ws = null;
-let localStream = null;
 let currentFacingMode = 'environment';
 let isStreaming = false;
 let wakeLock = null;
@@ -26,64 +26,73 @@ const RESOLUTIONS = {
   '4k': { width: 3840, height: 2160 }
 };
 
-function handleRemoteCommand(cmd) {
-  console.log("Remote command received from PC:", cmd);
+// --- Remote Commands Handler ---
+async function handleRemoteCommand(cmd) {
+  console.log("[Remote Command]", cmd);
   if (!cmd || !cmd.action) return;
 
   if (cmd.action === "set_res") {
-    resSelect.value = String(cmd.value);
-    initCamera().then(() => {
-      if (isStreaming) {
-        stopStream();
-        startStream();
-      }
-    });
+    await changeResolution(String(cmd.value));
   } else if (cmd.action === "set_fps") {
-    fpsSelect.value = String(cmd.value);
-    initCamera().then(() => {
-      if (isStreaming) {
-        stopStream();
-        startStream();
-      }
-    });
+    await changeFps(parseInt(cmd.value, 10));
   } else if (cmd.action === "flip") {
-    currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-    initCamera().then(() => {
-      if (isStreaming) {
-        stopStream();
-        startStream();
-      }
-    });
+    await flipCamera();
   } else if (cmd.action === "torch") {
-    toggleTorch();
+    await toggleTorch();
   }
 }
 
-function initWebSocketControl() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws`;
-  try {
-    ws = new WebSocket(wsUrl);
-    ws.onmessage = (event) => {
-      try {
-        const cmd = JSON.parse(event.data);
-        handleRemoteCommand(cmd);
-      } catch (e) {}
-    };
-    ws.onclose = () => {
-      setTimeout(initWebSocketControl, 2000);
-    };
-  } catch (e) {}
+async function changeResolution(resChoice) {
+  resSelect.value = resChoice;
+  statRes.textContent = `${resChoice}p`;
+  const target = RESOLUTIONS[resChoice] || RESOLUTIONS['720'];
+  const fpsChoice = parseInt(fpsSelect.value, 10);
+
+  if (currentTrack) {
+    try {
+      await currentTrack.applyConstraints({
+        width: { ideal: target.width },
+        height: { ideal: target.height },
+        frameRate: { ideal: fpsChoice, max: fpsChoice }
+      });
+      console.log("Resolution switched to:", target);
+      return;
+    } catch (e) {
+      console.warn("applyConstraints failed, falling back to replaceTrack:", e);
+    }
+  }
+  await reinitCameraTrack();
 }
 
-async function initCamera() {
-  if (localStream) {
-    localStream.getTracks().forEach(t => t.stop());
-  }
+async function changeFps(fpsChoice) {
+  fpsSelect.value = String(fpsChoice);
+  statFps.textContent = `${fpsChoice} FPS`;
+  const resChoice = resSelect.value;
+  const target = RESOLUTIONS[resChoice] || RESOLUTIONS['720'];
 
+  if (currentTrack) {
+    try {
+      await currentTrack.applyConstraints({
+        frameRate: { ideal: fpsChoice, max: fpsChoice }
+      });
+      console.log("FPS switched to:", fpsChoice);
+      return;
+    } catch (e) {
+      console.warn("applyConstraints failed, falling back to replaceTrack:", e);
+    }
+  }
+  await reinitCameraTrack();
+}
+
+async function flipCamera() {
+  currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+  await reinitCameraTrack();
+}
+
+async function reinitCameraTrack() {
   const resChoice = resSelect.value;
   const fpsChoice = parseInt(fpsSelect.value, 10);
-  const target = RESOLUTIONS[resChoice] || RESOLUTIONS['1080'];
+  const target = RESOLUTIONS[resChoice] || RESOLUTIONS['720'];
 
   statRes.textContent = `${resChoice}p`;
   statFps.textContent = `${fpsChoice} FPS`;
@@ -94,23 +103,56 @@ async function initCamera() {
       facingMode: currentFacingMode,
       width: { ideal: target.width },
       height: { ideal: target.height },
-      frameRate: { ideal: fpsChoice, min: 20, max: fpsChoice }
+      frameRate: { ideal: fpsChoice, max: fpsChoice }
     }
   };
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = localStream;
+    const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const newTrack = newStream.getVideoTracks()[0];
+
+    if (currentTrack) {
+      currentTrack.stop();
+    }
+    currentTrack = newTrack;
+    video.srcObject = newStream;
+
+    // Hot-swap the video track in WebRTC sender with zero reconnect!
+    if (currentSender) {
+      await currentSender.replaceTrack(newTrack);
+    }
     checkTorchSupport();
   } catch (err) {
-    console.error("Camera Access Error:", err);
+    console.error("Camera reinit error:", err);
   }
 }
 
+// --- Bulletproof Long-Polling for PC Remote Control ---
+async function startCommandPolling() {
+  while (true) {
+    try {
+      const res = await fetch('/poll-command', { cache: 'no-store' });
+      if (res.ok) {
+        const cmd = await res.json();
+        if (cmd && cmd.action && cmd.action !== 'ping') {
+          await handleRemoteCommand(cmd);
+        }
+      } else {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+}
+
+async function initCamera() {
+  await reinitCameraTrack();
+}
+
 function checkTorchSupport() {
-  if (!localStream) return;
-  const track = localStream.getVideoTracks()[0];
-  const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+  if (!currentTrack) return;
+  const capabilities = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
   if (capabilities.torch) {
     torchBtn.style.display = 'flex';
   } else {
@@ -119,11 +161,10 @@ function checkTorchSupport() {
 }
 
 async function toggleTorch() {
-  if (!localStream) return;
-  const track = localStream.getVideoTracks()[0];
+  if (!currentTrack) return;
   torchOn = !torchOn;
   try {
-    await track.applyConstraints({
+    await currentTrack.applyConstraints({
       advanced: [{ torch: torchOn }]
     });
     torchBtn.style.background = torchOn ? '#f59e0b' : '';
@@ -148,7 +189,7 @@ function releaseWakeLock() {
 }
 
 async function startStream() {
-  if (!localStream) {
+  if (!currentTrack) {
     await initCamera();
   }
 
@@ -157,10 +198,10 @@ async function startStream() {
 
   pc.ondatachannel = (event) => {
     controlChannel = event.channel;
-    controlChannel.onmessage = (e) => {
+    controlChannel.onmessage = async (e) => {
       try {
         const cmd = JSON.parse(e.data);
-        handleRemoteCommand(cmd);
+        await handleRemoteCommand(cmd);
       } catch (err) {}
     };
   };
@@ -178,11 +219,10 @@ async function startStream() {
     }
   };
 
-  const track = localStream.getVideoTracks()[0];
-  const sender = pc.addTrack(track, localStream);
+  currentSender = pc.addTrack(currentTrack);
 
   try {
-    const params = sender.getParameters();
+    const params = currentSender.getParameters();
     if (!params.encodings || params.encodings.length === 0) {
       params.encodings = [{}];
     }
@@ -193,7 +233,7 @@ async function startStream() {
 
     params.encodings[0].maxFramerate = fpsChoice;
     params.encodings[0].maxBitrate = targetBitrate;
-    await sender.setParameters(params);
+    await currentSender.setParameters(params);
   } catch (e) {}
 
   const offer = await pc.createOffer();
@@ -223,6 +263,7 @@ function stopStream() {
     pc.close();
     pc = null;
   }
+  currentSender = null;
   isStreaming = false;
   statusText.textContent = "READY";
   statusBadge.classList.remove('streaming');
@@ -240,32 +281,12 @@ streamBtn.addEventListener('click', () => {
   }
 });
 
-flipBtn.addEventListener('click', async () => {
-  currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-  await initCamera();
-  if (isStreaming) {
-    stopStream();
-    await startStream();
-  }
-});
-
+flipBtn.addEventListener('click', flipCamera);
 torchBtn.addEventListener('click', toggleTorch);
-resSelect.addEventListener('change', async () => {
-  await initCamera();
-  if (isStreaming) {
-    stopStream();
-    await startStream();
-  }
-});
-fpsSelect.addEventListener('change', async () => {
-  await initCamera();
-  if (isStreaming) {
-    stopStream();
-    await startStream();
-  }
-});
+resSelect.addEventListener('change', () => changeResolution(resSelect.value));
+fpsSelect.addEventListener('change', () => changeFps(parseInt(fpsSelect.value, 10)));
 
 window.addEventListener('DOMContentLoaded', () => {
   initCamera();
-  initWebSocketControl();
+  startCommandPolling();
 });

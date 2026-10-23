@@ -66,14 +66,14 @@ def parse_args():
     parser.add_argument(
         "--width",
         type=int,
-        default=1920,
-        help="Target webcam width (default: 1920)"
+        default=1280,
+        help="Target webcam width (default: 1280)"
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=1080,
-        help="Target webcam height (default: 1080)"
+        default=720,
+        help="Target webcam height (default: 720)"
     )
     parser.add_argument(
         "--ip",
