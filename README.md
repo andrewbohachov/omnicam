@@ -1,107 +1,60 @@
-# 🚀 AirCam
+# 📷 EasyWebcam
 
-> Turn any smartphone (iOS / Android) into a high-performance, low-latency wireless webcam for Linux.  
-> **Zero apps installed on the phone. Clean video only. No audio pollution.**
-
----
-
-## ⚡ Features
-
-* **Zero Apps on Phone:** Works seamlessly in mobile Safari (iOS) and Chrome (Android). Just scan the QR code.
-* **Pure Video Stream:** Strictly video. Does **not** hijack your audio, create dummy microphones, or mess with ALSA/PipeWire/PulseAudio.
-* **Low Latency (~30–50ms):** Powered by native **WebRTC** with hardware-accelerated H.264/VP8 encoding directly on your phone's SoC.
-* **Full HD 60 FPS:** Supports 1080p60, 720p60, and 4K (depending on device sensor).
-* **Native Linux Webcam:** Pipes frames directly into `/dev/video0` via kernel module `v4l2loopback`. Compatible with **Discord**, **OBS Studio**, **Telegram**, **Zoom**, **Google Meet**, and browser webcams.
-* **Touch-Friendly Mobile UI:**
-  * Flip between front and rear cameras
-  * Resolution & FPS selector
-  * Screen WakeLock (prevents phone screen from turning off)
-  * Flashlight / Torch toggle (on supported devices)
-* **Terminal QR Code:** Instant pairing via ANSI QR code printed right in your terminal.
-* **100% Private & Local:** All communication happens over your local Wi-Fi. No cloud relay, no external servers.
+> Turn any smartphone (iOS / Android) into a high-performance wireless Linux webcam.  
+> **Zero apps installed on the phone. Clean video only. No audio cables. No ghost devices.**
 
 ---
 
-## 📋 Prerequisites
+## ⚡ Highlights
 
-AirCam requires `v4l2loopback` and Python 3.9+:
+* **Global CLI Utility:** Run `easywebcam` directly from any terminal.
+* **Ephemeral Virtual Camera:** The virtual `/dev/video0` device is created on launch and **completely removed from the OS on exit**. Zero leftover virtual devices.
+* **Zero Apps on Phone:** Works in Safari (iOS) and Chrome (Android). Just scan the terminal QR code.
+* **Strictly Video Only:** No virtual sound cards, no PulseAudio/PipeWire sink pollution.
+* **Low Latency (~30–50ms):** Native hardware-accelerated **WebRTC** (H.264/VP8) streaming directly over your local Wi-Fi.
+* **Full HD 60 FPS:** 1080p, 720p, and 4K support.
+* **Universal Linux Support:** Shows up as **"EasyWebcam"** in **Discord**, **OBS Studio**, **Telegram**, **Zoom**, **Google Meet**, etc.
 
-### Ubuntu / Debian:
+---
+
+## 🚀 Quick Usage
+
+In any terminal, simply run:
+
 ```bash
-sudo apt update
-sudo apt install -y v4l2loopback-dkms v4l-utils python3 python3-venv
+easywebcam
 ```
 
-### Arch Linux / Manjaro:
-```bash
-sudo pacman -S v4l2loopback-dkms v4l-utils python
-```
+1. An **ANSI QR code** will appear directly in your terminal.
+2. Point your phone camera at the QR code to open the link.
+3. On your phone: tap **"Proceed"** (for local HTTPS) and **"Allow"** for camera access.
+4. Tap **"START STREAM"**.
+5. In Discord, OBS, or Telegram, select **"EasyWebcam"**.
+6. When done, press `Ctrl+C` in the terminal — the virtual camera device will automatically be removed from your system.
 
 ---
 
-## 🚀 Quick Start
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/aircam.git
-   cd aircam
-   ```
-
-2. **Run AirCam:**
-   ```bash
-   ./run.sh
-   ```
-
-3. **Connect Your Phone:**
-   * An ANSI QR code will appear in your terminal.
-   * Point your phone's camera at the QR code to open the local link.
-   * On your phone, tap **"Proceed"** (for local self-signed HTTPS) and tap **"Allow"** for camera access.
-   * Tap **"START STREAM"**.
-
-4. **Select in Apps:**
-   * Open **Discord**, **OBS**, or **Telegram**.
-   * Choose **"AirCam (Wireless)"** (or `/dev/video0`) in your video settings.
-
----
-
-## ⚙️ Options
+## ⚙️ Options & Arguments
 
 ```bash
-./run.sh [OPTIONS]
+easywebcam [OPTIONS]
 
 Options:
   -p, --port PORT      HTTPS server port (default: 8443)
-  -d, --device DEVICE  V4L2 loopback device (default: /dev/video0)
-  --ip IP              Manually specify local IP if multiple network interfaces exist
+  -d, --device DEVICE  V4L2 target device (default: /dev/video0)
+  -l, --label LABEL    Device display name (default: EasyWebcam)
+  --ip IP              Manual local IP override
+  --keep-device        Do not unload v4l2loopback on shutdown
   -h, --help           Show help message
 ```
 
----
+### Examples:
+```bash
+# Run on custom port
+easywebcam -p 9000
 
-## 🔒 Why HTTPS & Self-Signed Certs?
-
-Modern mobile browsers (Chrome on Android, Safari on iOS) strictly restrict camera access (`getUserMedia`) to secure contexts (`https://` or `localhost`). 
-
-AirCam automatically generates an ephemeral, local self-signed certificate with your local LAN IP included in the Subject Alternative Name (SAN). The first time you connect, simply tap **Advanced → Proceed** in your mobile browser.
-
----
-
-## 🛠️ Architecture
-
-```
-[ Phone Camera (iOS / Android) ]
-              │
-              ▼ (Native WebRTC Hardware H.264 Encoder)
-       [ Local Wi-Fi (UDP) ]
-              │
-              ▼
-   [ AirCam Receiver (PyAV) ]
-              │
-              ▼ (YUYV 4:2:2 Raw Video Frames)
-   [ Linux Kernel: /dev/video0 (v4l2loopback) ]
-              │
-              ▼
-[ Discord / OBS / Zoom / Chrome ]
+# Set custom webcam label shown in apps
+easywebcam -l "iPhone 15 Pro Cam"
 ```
 
 ---

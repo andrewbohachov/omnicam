@@ -1,6 +1,6 @@
 """
-AirCam - WebRTC Session & Frame Pipeline
-Receives video track from browser, decodes frames with PyAV, and pipes them to V4L2Sink.
+EasyWebcam - WebRTC Session & Frame Pipeline
+Receives video track from phone browser, decodes frames with PyAV, and pipes them to V4L2DeviceManager.
 """
 
 import asyncio
@@ -8,10 +8,10 @@ import time
 from typing import Optional, Callable
 from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack
 import av
-from .v4l2 import V4L2Sink
+from .v4l2 import V4L2DeviceManager
 
 class WebRTCSession:
-    def __init__(self, sink: V4L2Sink, on_stats_update: Optional[Callable[[dict], None]] = None):
+    def __init__(self, sink: V4L2DeviceManager, on_stats_update: Optional[Callable[[dict], None]] = None):
         self.sink = sink
         self.pc: Optional[RTCPeerConnection] = None
         self.on_stats_update = on_stats_update
@@ -88,7 +88,7 @@ class WebRTCSession:
                             "height": self._current_height,
                             "frames": self.total_frames
                         })
-        except Exception as e:
+        except Exception:
             pass
         finally:
             self.is_active = False

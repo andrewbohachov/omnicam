@@ -1,17 +1,17 @@
 """
-AirCam - Local Web Server & Signaling
+EasyWebcam - Local Web Server & Signaling
 Serves mobile web client over HTTPS and coordinates WebRTC signaling.
 """
 
 from aiohttp import web
 from pathlib import Path
-from .v4l2 import V4L2Sink
+from .v4l2 import V4L2DeviceManager
 from .webrtc import WebRTCSession
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-class AirCamServer:
-    def __init__(self, sink: V4L2Sink, on_stats_update=None):
+class EasyWebcamServer:
+    def __init__(self, sink: V4L2DeviceManager, on_stats_update=None):
         self.sink = sink
         self.session = WebRTCSession(sink, on_stats_update=on_stats_update)
         self.app = web.Application()
@@ -38,4 +38,4 @@ class AirCamServer:
 
     async def cleanup(self):
         await self.session.close()
-        self.sink.close()
+        self.sink.stop()
