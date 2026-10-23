@@ -63,7 +63,8 @@ def render_frame_aspect_fit(in_frame: av.VideoFrame, target_w: int, target_h: in
 
     # Calculate proportional scale
     scale = min(target_w / src_w, target_h / src_h)
-    scaled_w = (int(src_w * scale) // 2) * 2
+    # Align scaled dimensions to multiples of 4 (ensures YUYV 2-pixel macroblock alignment)
+    scaled_w = (int(src_w * scale) // 4) * 4
     scaled_h = (int(src_h * scale) // 2) * 2
 
     # Direct match (e.g. 1920x1080 -> 1920x1080)
@@ -82,7 +83,10 @@ def render_frame_aspect_fit(in_frame: av.VideoFrame, target_w: int, target_h: in
     # Scale with aspect preservation and center blit with clean black bars
     scaled_frame = in_frame.reformat(width=scaled_w, height=scaled_h, format="yuyv422")
     scaled_plane = bytes(scaled_frame.planes[0])
-    scaled_stride = scaled_w * 2
+
+    # CRITICAL: Read each scanline using actual FFmpeg stride (which includes alignment padding)
+    src_stride = scaled_frame.planes[0].line_size
+    bytes_to_copy = scaled_w * 2
     target_stride = target_w * 2
 
     # Center offsets
@@ -96,8 +100,8 @@ def render_frame_aspect_fit(in_frame: av.VideoFrame, target_w: int, target_h: in
 
     for y in range(scaled_h):
         c_off = (pad_y + y) * target_stride + start_byte_x
-        f_off = y * scaled_stride
-        canvas[c_off : c_off + scaled_stride] = scaled_plane[f_off : f_off + scaled_stride]
+        f_off = y * src_stride
+        canvas[c_off : c_off + bytes_to_copy] = scaled_plane[f_off : f_off + bytes_to_copy]
 
     return bytes(canvas)
 
