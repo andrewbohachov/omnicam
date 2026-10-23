@@ -1,14 +1,54 @@
 """
 EasyWebcam - WebRTC Session & Frame Pipeline
 Receives video track from phone browser, decodes frames with PyAV, and pipes them to V4L2DeviceManager.
+Includes Python 3.14 asyncio compatibility patches for aioice/aiortc.
 """
 
 import asyncio
 import time
+import sys
 from typing import Optional, Callable
-from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, MediaStreamTrack
+from aiortc.rtcrtpreceiver import RTCRtpReceiver
 import av
 from .v4l2 import V4L2DeviceManager
+
+# --- Compatibility Patches for Python 3.14 & aioice ---
+try:
+    import asyncio.selector_events
+    _orig_fatal = asyncio.selector_events._SelectorDatagramTransport._fatal_error
+    def _safe_fatal(self, exc, message='Fatal error on transport'):
+        if getattr(self, '_loop', None) is None:
+            return
+        _orig_fatal(self, exc, message)
+    asyncio.selector_events._SelectorDatagramTransport._fatal_error = _safe_fatal
+except Exception:
+    pass
+
+try:
+    import aioice.ice
+    import aioice.stun
+
+    _orig_send_stun = aioice.ice.StunProtocol.send_stun
+    def _safe_send_stun(self, message, addr):
+        if not self.transport or getattr(self.transport, '_sock', None) is None:
+            return
+        try:
+            _orig_send_stun(self, message, addr)
+        except Exception:
+            pass
+    aioice.ice.StunProtocol.send_stun = _safe_send_stun
+
+    _orig_retry = aioice.stun.Transaction._Transaction__retry
+    def _safe_retry(self):
+        try:
+            _orig_retry(self)
+        except Exception:
+            pass
+    aioice.stun.Transaction._Transaction__retry = _safe_retry
+except Exception:
+    pass
+# -----------------------------------------------------
 
 class WebRTCSession:
     def __init__(self, sink: V4L2DeviceManager, on_stats_update: Optional[Callable[[dict], None]] = None):
@@ -28,8 +68,21 @@ class WebRTCSession:
         if self.pc:
             await self.close()
 
-        self.pc = RTCPeerConnection()
+        # No external STUN servers needed for local LAN streaming
+        config = RTCConfiguration(iceServers=[])
+        self.pc = RTCPeerConnection(configuration=config)
         self.is_active = True
+
+        # Prioritize hardware-accelerated H.264 video codec
+        try:
+            t = self.pc.addTransceiver("video", direction="recvonly")
+            capabilities = RTCRtpReceiver.getCapabilities("video")
+            if capabilities and capabilities.codecs:
+                h264_codecs = [c for c in capabilities.codecs if "h264" in c.mimeType.lower()]
+                other_codecs = [c for c in capabilities.codecs if "h264" not in c.mimeType.lower()]
+                t.setCodecPreferences(h264_codecs + other_codecs)
+        except Exception:
+            pass
 
         @self.pc.on("connectionstatechange")
         async def on_connectionstatechange():

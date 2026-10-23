@@ -1,4 +1,4 @@
-// AirCam WebRTC Client
+// EasyWebcam WebRTC Client
 const video = document.getElementById('preview');
 const streamBtn = document.getElementById('stream-btn');
 const btnLabel = document.getElementById('btn-label');
@@ -42,7 +42,7 @@ async function initCamera() {
       facingMode: currentFacingMode,
       width: { ideal: target.width },
       height: { ideal: target.height },
-      frameRate: { ideal: fpsChoice, min: 24 }
+      frameRate: { ideal: fpsChoice, min: 24, max: fpsChoice }
     }
   };
 
@@ -103,7 +103,9 @@ async function startStream() {
   }
 
   statusText.textContent = "CONNECTING...";
-  pc = new RTCPeerConnection();
+  
+  // Clean WebRTC setup with LAN-only config
+  pc = new RTCPeerConnection({ iceServers: [] });
 
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
@@ -118,7 +120,23 @@ async function startStream() {
     }
   };
 
-  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+  const track = localStream.getVideoTracks()[0];
+  const sender = pc.addTrack(track, localStream);
+
+  // Tell browser's encoder: prioritize framerate, allocate high bitrate for local Wi-Fi
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) {
+      params.encodings = [{}];
+    }
+    params.degradationPreference = 'maintain-framerate';
+    const fpsChoice = parseInt(fpsSelect.value, 10);
+    params.encodings[0].maxFramerate = fpsChoice;
+    params.encodings[0].maxBitrate = 12000000; // 12 Mbps
+    await sender.setParameters(params);
+  } catch (e) {
+    console.log("Sender parameters notice:", e);
+  }
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
@@ -189,7 +207,6 @@ fpsSelect.addEventListener('change', async () => {
   }
 });
 
-// Auto-start preview on load
 window.addEventListener('DOMContentLoaded', () => {
   initCamera();
 });
