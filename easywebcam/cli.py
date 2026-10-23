@@ -7,7 +7,6 @@ Cleans up and removes the virtual webcam device on shutdown.
 import sys
 import ssl
 import socket
-import signal
 import argparse
 import asyncio
 from aiohttp import web
@@ -64,6 +63,18 @@ def parse_args():
         help="Webcam name shown in Discord/OBS/browsers (default: EasyWebcam)"
     )
     parser.add_argument(
+        "--width",
+        type=int,
+        default=1920,
+        help="Target webcam width (default: 1920)"
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=1080,
+        help="Target webcam height (default: 1080)"
+    )
+    parser.add_argument(
         "--ip",
         type=str,
         default=None,
@@ -82,13 +93,15 @@ def main():
     port = args.port
     device = args.device
     card_label = args.label
+    width = args.width
+    height = args.height
 
     print("=========================================================")
     print(f"  📷 EasyWebcam — Phone Webcam for Linux")
     print("=========================================================")
 
-    # Initialize and dynamically create the virtual webcam device
-    device_mgr = V4L2DeviceManager(device=device, card_label=card_label)
+    # Initialize and dynamically create the virtual webcam device with fixed resolution
+    device_mgr = V4L2DeviceManager(device=device, card_label=card_label, width=width, height=height)
     if not device_mgr.start():
         print(f"[!] Critical: Could not initialize {device} via v4l2loopback.")
         sys.exit(1)
@@ -124,6 +137,7 @@ def main():
     print(f"   {url}")
     print("---------------------------------------------------------")
     print(f"💡 Select '{card_label}' in Discord, OBS, Telegram, or Zoom.")
+    print(f"💡 Output locked to {width}x{height} (prevents stride/banding artifacts).")
     print("💡 Virtual device will be cleanly removed when you press Ctrl+C.")
     print("---------------------------------------------------------\n")
 

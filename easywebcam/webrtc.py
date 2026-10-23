@@ -1,7 +1,7 @@
 """
 EasyWebcam - WebRTC Session & Frame Pipeline
 Decouples network receiving from V4L2 writing via a non-blocking queue.
-Ensures zero UDP packet drop and artifact-free hardware-accelerated streaming.
+Enforces fixed output dimension and stride, eliminating scanline wrapping/stride artifacts.
 Includes Python 3.14 asyncio compatibility patches for aioice/aiortc.
 """
 
@@ -54,11 +54,11 @@ except Exception:
 class WebRTCSession:
     def __init__(self, sink: V4L2DeviceManager, on_stats_update: Optional[Callable[[dict], None]] = None):
         self.sink = sink
+        self.target_width = sink.target_width
+        self.target_height = sink.target_height
         self.pc: Optional[RTCPeerConnection] = None
         self.on_stats_update = on_stats_update
         self.is_active = False
-        self._current_width = 0
-        self._current_height = 0
         self.fps = 0.0
         self.total_frames = 0
         self._frame_count = 0
@@ -96,7 +96,6 @@ class WebRTCSession:
         @self.pc.on("track")
         def on_track(track: MediaStreamTrack):
             if track.kind == "video":
-                # Start decoupled writer and receiver loops
                 self._writer_task = asyncio.create_task(self._v4l2_writer_loop())
                 asyncio.create_task(self._network_receiver_loop(track))
 
@@ -118,7 +117,6 @@ class WebRTCSession:
         try:
             while self.is_active:
                 frame: av.VideoFrame = await track.recv()
-                # If queue has an old unwritten frame, drop it in favor of the freshest frame
                 if self._frame_queue.full():
                     try:
                         self._frame_queue.get_nowait()
@@ -132,26 +130,36 @@ class WebRTCSession:
 
     async def _v4l2_writer_loop(self):
         """
-        Dedicated V4L2 writer loop: Pulls fresh frames and writes to /dev/videoX.
-        Never stalls the network receiver.
+        Dedicated V4L2 writer loop: Normalizes every incoming frame to target resolution
+        and writes packed scanlines with exact stride into /dev/videoX.
         """
         self._last_fps_time = time.time()
         self._frame_count = 0
+        expected_line_size = self.target_width * 2
 
         try:
             while self.is_active:
-                frame = await self._frame_queue.get()
-                w, h = frame.width, frame.height
+                in_frame = await self._frame_queue.get()
 
-                # Configure format on resolution change
-                if w != self._current_width or h != self._current_height:
-                    self._current_width = w
-                    self._current_height = h
-                    self.sink.setup_format(w, h, pixel_format="YUYV")
+                # Always scale and reformat to fixed device resolution (e.g. 1920x1080 YUYV)
+                # This guarantees that the reader (Discord) never suffers stride or scanline mismatches!
+                out_frame = in_frame.reformat(
+                    width=self.target_width,
+                    height=self.target_height,
+                    format="yuyv422"
+                )
 
-                # Reformat and write directly to non-blocking V4L2 device
-                yuyv_frame = frame.reformat(format="yuyv422")
-                raw_bytes = bytes(yuyv_frame.planes[0])
+                plane = out_frame.planes[0]
+                if plane.line_size == expected_line_size:
+                    raw_bytes = bytes(plane)
+                else:
+                    # Strip any row padding added by FFmpeg alignment
+                    raw_plane = bytes(plane)
+                    raw_bytes = b"".join(
+                        raw_plane[i * plane.line_size : i * plane.line_size + expected_line_size]
+                        for i in range(self.target_height)
+                    )
+
                 self.sink.write_frame(raw_bytes)
 
                 self.total_frames += 1
@@ -165,8 +173,8 @@ class WebRTCSession:
                     if self.on_stats_update:
                         self.on_stats_update({
                             "fps": self.fps,
-                            "width": self._current_width,
-                            "height": self._current_height,
+                            "width": self.target_width,
+                            "height": self.target_height,
                             "frames": self.total_frames
                         })
         except Exception:

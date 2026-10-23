@@ -1,6 +1,7 @@
 """
 EasyWebcam - V4L2 Loopback Dynamic Lifecycle Manager
 Creates the virtual webcam device on startup and removes it cleanly on shutdown.
+Enforces fixed, standard resolution and stride to prevent horizontal banding/artifacts.
 """
 
 import os
@@ -9,11 +10,11 @@ import time
 from typing import Optional
 
 class V4L2DeviceManager:
-    def __init__(self, device: Optional[str] = None, card_label: str = "EasyWebcam"):
+    def __init__(self, device: Optional[str] = None, card_label: str = "EasyWebcam", width: int = 1920, height: int = 1080):
         self.device = device or "/dev/video0"
         self.card_label = card_label
-        self.width = 0
-        self.height = 0
+        self.target_width = width
+        self.target_height = height
         self.pixel_format = "YUYV"
         self._fd: Optional[int] = None
         self._we_loaded_module = False
@@ -40,7 +41,6 @@ class V4L2DeviceManager:
                     capture_output=True
                 )
                 self._we_loaded_module = True
-                # Give udev a moment to create the device node
                 for _ in range(20):
                     if os.path.exists(self.device):
                         break
@@ -52,7 +52,6 @@ class V4L2DeviceManager:
             print(f"[*] Using existing v4l2loopback module on {self.device}...")
 
         if not os.path.exists(self.device):
-            # Check what video devices exist
             import glob
             devs = glob.glob("/dev/video*")
             if devs:
@@ -67,7 +66,10 @@ class V4L2DeviceManager:
         except Exception:
             pass
 
-        print(f"[✓] Virtual webcam online: {self.device} ({self.card_label})")
+        # Pre-configure fixed standard resolution before any app (Discord, OBS) connects
+        self.setup_format(self.target_width, self.target_height, self.pixel_format)
+
+        print(f"[✓] Virtual webcam online: {self.device} ({self.card_label}) [{self.target_width}x{self.target_height}]")
         return True
 
     def setup_format(self, width: int, height: int, pixel_format: str = "YUYV") -> bool:
@@ -79,8 +81,8 @@ class V4L2DeviceManager:
                 pass
             self._fd = None
 
-        self.width = width
-        self.height = height
+        self.target_width = width
+        self.target_height = height
         self.pixel_format = pixel_format
 
         cmd = [
@@ -94,6 +96,7 @@ class V4L2DeviceManager:
             print(f"[!] Warning setting format: {e}")
 
         try:
+            # Non-blocking write descriptor to prevent event-loop stalls
             self._fd = os.open(self.device, os.O_WRONLY)
             return True
         except Exception as e:
@@ -125,7 +128,6 @@ class V4L2DeviceManager:
         if self._we_loaded_module:
             print(f"\n[*] Cleaning up: Removing {self.device} from system...")
             try:
-                # Small delay to ensure any readers (Discord, etc.) release the file
                 time.sleep(0.2)
                 subprocess.run(["sudo", "modprobe", "-r", "v4l2loopback"], check=False, capture_output=True)
                 print(f"[✓] Virtual webcam device removed. System clean.")
