@@ -50,12 +50,42 @@ While streaming, you can type commands directly into the Linux terminal:
 
 | Command | Action |
 | :--- | :--- |
-| `720` / `1080` / `4k` | Switch phone camera resolution on the fly |
+| `720` / `1080` | Switch phone camera resolution on the fly |
 | `30` / `60` | Change target framerate |
 | `f` or `flip` | Flip between Front (Selfie) and Rear camera |
 | `t` or `torch` | Toggle phone flashlight (where supported) |
+| `s` or `status` | Show live stream stats and FPS |
 | `h` or `help` | Show commands cheat sheet |
 | `q` or `quit` | Stop stream and clean up device |
+
+---
+
+## ⚙️ Options & Arguments
+
+```bash
+easywebcam [OPTIONS]
+
+Options:
+  -r, --res RES        Webcam output resolution: 1080 or 720 (default: 1080)
+  -p, --port PORT      HTTPS server port (default: 8443)
+  -d, --device DEVICE  V4L2 target device (default: /dev/video0)
+  -l, --label LABEL    Device display name (default: EasyWebcam)
+  --ip IP              Manual local IP override
+  --keep-device        Do not unload v4l2loopback on shutdown
+  -h, --help           Show help message
+```
+
+### Examples:
+```bash
+# Default: 1080p Full HD output
+easywebcam
+
+# Launch with 720p output for lighter load / slower Wi-Fi
+easywebcam -r 720
+
+# Run with custom camera name
+easywebcam -r 1080 -l "Pixel 8 Pro Cam"
+```
 
 ---
 

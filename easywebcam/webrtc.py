@@ -1,8 +1,8 @@
 """
 EasyWebcam - WebRTC Session & Frame Pipeline
 Decouples network receiving from V4L2 writing via a non-blocking queue.
-Enforces fixed output dimension, stride, and automatic 16:9 aspect-crop,
-preventing perspective stretching and scanline artifacts.
+Enforces fixed output dimension and stride with intelligent Aspect-Fit (Pillarboxing/Letterboxing),
+guaranteeing 100% natural, undistorted proportions in both Horizontal and Vertical orientations.
 """
 
 import asyncio
@@ -51,50 +51,55 @@ except Exception:
     pass
 # -----------------------------------------------------
 
-def crop_to_16_9(frame: av.VideoFrame) -> av.VideoFrame:
-    """Center-crops frame to 16:9 widescreen to prevent perspective squash/stretch."""
-    target_ratio = 16.0 / 9.0
-    src_w, src_h = frame.width, frame.height
-    src_ratio = src_w / src_h
+def render_frame_aspect_fit(in_frame: av.VideoFrame, target_w: int, target_h: int) -> bytes:
+    """
+    Renders the incoming frame (landscape OR portrait) into target_w x target_h YUYV.
+    Preserves exact aspect ratio:
+    - Landscape: fills the widescreen display.
+    - Portrait: centers the vertical image with clean black pillarbox bars on the sides.
+    Zero geometric distortion or stretching!
+    """
+    src_w, src_h = in_frame.width, in_frame.height
 
-    # If already ~16:9, return as-is
-    if abs(src_ratio - target_ratio) < 0.04:
-        return frame
+    # Calculate proportional scale
+    scale = min(target_w / src_w, target_h / src_h)
+    scaled_w = (int(src_w * scale) // 2) * 2
+    scaled_h = (int(src_h * scale) // 2) * 2
 
-    if src_ratio < target_ratio:
-        # Taller than 16:9 (e.g. 4:3 1280x960), crop top & bottom
-        new_h = int(src_w / target_ratio)
-        new_h = (new_h // 2) * 2
-        crop_y = (src_h - new_h) // 2
-        new_w = src_w
-        crop_x = 0
-    else:
-        # Wider than 16:9, crop sides
-        new_w = int(src_h * target_ratio)
-        new_w = (new_w // 2) * 2
-        crop_x = (src_w - new_w) // 2
-        new_h = src_h
-        crop_y = 0
+    # Direct match (e.g. 1920x1080 -> 1920x1080)
+    if scaled_w == target_w and scaled_h == target_h:
+        out_frame = in_frame.reformat(width=target_w, height=target_h, format="yuyv422")
+        plane = out_frame.planes[0]
+        expected_stride = target_w * 2
+        if plane.line_size == expected_stride:
+            return bytes(plane)
+        raw_plane = bytes(plane)
+        return b"".join(
+            raw_plane[i * plane.line_size : i * plane.line_size + expected_stride]
+            for i in range(target_h)
+        )
 
-    try:
-        cropped = av.VideoFrame(new_w, new_h, frame.format.name)
-        y_stride = frame.planes[0].line_size
-        cropped.planes[0].update(
-            memoryview(frame.planes[0])[crop_y * y_stride : (crop_y + new_h) * y_stride]
-        )
-        u_stride = frame.planes[1].line_size
-        u_crop_y = crop_y // 2
-        u_h = new_h // 2
-        cropped.planes[1].update(
-            memoryview(frame.planes[1])[u_crop_y * u_stride : (u_crop_y + u_h) * u_stride]
-        )
-        v_stride = frame.planes[2].line_size
-        cropped.planes[2].update(
-            memoryview(frame.planes[2])[u_crop_y * v_stride : (u_crop_y + u_h) * v_stride]
-        )
-        return cropped
-    except Exception:
-        return frame
+    # Scale with aspect preservation and center blit with clean black bars
+    scaled_frame = in_frame.reformat(width=scaled_w, height=scaled_h, format="yuyv422")
+    scaled_plane = bytes(scaled_frame.planes[0])
+    scaled_stride = scaled_w * 2
+    target_stride = target_w * 2
+
+    # Center offsets
+    pad_x = ((target_w - scaled_w) // 4) * 2
+    pad_y = (target_h - scaled_h) // 2
+    start_byte_x = pad_x * 2
+
+    # Create solid black YUYV canvas (Y=0, U=128, Y=0, V=128)
+    black_line = b"\x00\x80\x00\x80" * (target_w // 2)
+    canvas = bytearray(black_line * target_h)
+
+    for y in range(scaled_h):
+        c_off = (pad_y + y) * target_stride + start_byte_x
+        f_off = y * scaled_stride
+        canvas[c_off : c_off + scaled_stride] = scaled_plane[f_off : f_off + scaled_stride]
+
+    return bytes(canvas)
 
 
 class WebRTCSession:
@@ -193,12 +198,11 @@ class WebRTCSession:
 
     async def _v4l2_writer_loop(self):
         """
-        Dedicated V4L2 writer loop: Normalizes every incoming frame to target resolution
-        and writes packed scanlines with exact stride into /dev/videoX.
+        Dedicated V4L2 writer loop: Normalizes every incoming frame (portrait or landscape)
+        into target resolution with guaranteed aspect ratio preservation.
         """
         self._last_fps_time = time.time()
         self._frame_count = 0
-        expected_line_size = self.target_width * 2
 
         try:
             while self.is_active:
@@ -206,26 +210,8 @@ class WebRTCSession:
                 self._last_phone_w = in_frame.width
                 self._last_phone_h = in_frame.height
 
-                # Ensure perfect 16:9 perspective (center-crop non-16:9 streams)
-                normalized_frame = crop_to_16_9(in_frame)
-
-                # Reformat and scale to target device resolution (1280x720 YUYV)
-                out_frame = normalized_frame.reformat(
-                    width=self.target_width,
-                    height=self.target_height,
-                    format="yuyv422"
-                )
-
-                plane = out_frame.planes[0]
-                if plane.line_size == expected_line_size:
-                    raw_bytes = bytes(plane)
-                else:
-                    raw_plane = bytes(plane)
-                    raw_bytes = b"".join(
-                        raw_plane[i * plane.line_size : i * plane.line_size + expected_line_size]
-                        for i in range(self.target_height)
-                    )
-
+                # Render with exact aspect ratio fit (Pillarbox vertical / Fullscreen horizontal)
+                raw_bytes = render_frame_aspect_fit(in_frame, self.target_width, self.target_height)
                 self.sink.write_frame(raw_bytes)
 
                 self.total_frames += 1
