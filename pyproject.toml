@@ -9,7 +9,7 @@ description = "Turn any smartphone into a wireless Linux webcam (zero apps on ph
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [
-    { name = "Chelsea" }
+    { name = "Andrew Bohachov" }
 ]
 dependencies = [
     "aiohttp>=3.9.0",

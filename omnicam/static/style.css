@@ -47,6 +47,27 @@ body {
   pointer-events: none;
 }
 
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.lang-pill {
+  background: var(--bg-hud);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: #38bdf8;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+
 .badge {
   display: flex;
   align-items: center;

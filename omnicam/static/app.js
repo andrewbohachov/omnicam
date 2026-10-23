@@ -1,4 +1,4 @@
-// OmniCam WebRTC Client - Strict 16:9 Presets (720p & 1080p only)
+// OmniCam WebRTC Client - Bilingual EN (default) & RU
 const video = document.getElementById('preview');
 const streamBtn = document.getElementById('stream-btn');
 const btnLabel = document.getElementById('btn-label');
@@ -10,6 +10,7 @@ const resSelect = document.getElementById('res-select');
 const fpsSelect = document.getElementById('fps-select');
 const statRes = document.getElementById('stat-res');
 const statFps = document.getElementById('stat-fps');
+const langBtn = document.getElementById('lang-btn');
 
 let pc = null;
 let currentTrack = null;
@@ -20,7 +21,55 @@ let isStreaming = false;
 let wakeLock = null;
 let torchOn = false;
 
-// ONLY standard 16:9 widescreen resolutions to eliminate perspective distortion
+// i18n
+let currentLang = localStorage.getItem('omnicam_lang') || 'en';
+
+const UI_TEXT = {
+  en: {
+    ready: "READY",
+    connecting: "CONNECTING...",
+    live: "LIVE",
+    startStream: "START STREAM",
+    stopStream: "STOP STREAM",
+    flip: "Flip Camera",
+    torch: "Torch",
+    badgeLang: "EN",
+  },
+  ru: {
+    ready: "ГОТОВО",
+    connecting: "ПОДКЛЮЧЕНИЕ...",
+    live: "В ЭФИРЕ",
+    startStream: "НАЧАТЬ СТРИМ",
+    stopStream: "ОСТАНОВИТЬ СТРИМ",
+    flip: "Сменить камеру",
+    torch: "Фонарик",
+    badgeLang: "RU",
+  }
+};
+
+function applyLanguage(lang) {
+  currentLang = lang === 'ru' ? 'ru' : 'en';
+  localStorage.setItem('omnicam_lang', currentLang);
+  const t = UI_TEXT[currentLang];
+
+  langBtn.textContent = t.badgeLang;
+  flipBtn.title = t.flip;
+  torchBtn.title = t.torch;
+
+  if (isStreaming) {
+    statusText.textContent = t.live;
+    btnLabel.textContent = t.stopStream;
+  } else {
+    statusText.textContent = t.ready;
+    btnLabel.textContent = t.startStream;
+  }
+}
+
+langBtn.addEventListener('click', () => {
+  applyLanguage(currentLang === 'en' ? 'ru' : 'en');
+});
+
+// Standard 16:9 widescreen resolutions
 const RESOLUTIONS = {
   '720': { width: 1280, height: 720 },
   '1080': { width: 1920, height: 1080 }
@@ -62,7 +111,6 @@ async function changeResolution(resChoice) {
         aspectRatio: { ideal: 1.7777777778 },
         frameRate: { ideal: fpsChoice, max: fpsChoice }
       });
-      console.log("Resolution switched to:", target);
       return;
     } catch (e) {
       console.warn("applyConstraints failed, falling back to replaceTrack:", e);
@@ -74,10 +122,9 @@ async function changeResolution(resChoice) {
 async function changeFps(fpsChoice) {
   fpsSelect.value = String(fpsChoice);
   statFps.textContent = `${fpsChoice} FPS`;
-  const resChoice = resSelect.value === '1080' ? '1080' : '720';
+  const resChoice = resSelect.value === '720' ? '720' : '1080';
   const target = RESOLUTIONS[resChoice];
 
-  // ALWAYS pass width, height, and aspectRatio to avoid camera resetting to 4:3 (1280x960)!
   if (currentTrack) {
     try {
       await currentTrack.applyConstraints({
@@ -86,7 +133,6 @@ async function changeFps(fpsChoice) {
         aspectRatio: { ideal: 1.7777777778 },
         frameRate: { ideal: fpsChoice, max: fpsChoice }
       });
-      console.log("FPS switched to:", fpsChoice);
       return;
     } catch (e) {
       console.warn("applyConstraints failed, falling back to replaceTrack:", e);
@@ -204,7 +250,8 @@ async function startStream() {
     await initCamera();
   }
 
-  statusText.textContent = "CONNECTING...";
+  const t = UI_TEXT[currentLang];
+  statusText.textContent = t.connecting;
   pc = new RTCPeerConnection({ iceServers: [] });
 
   pc.ondatachannel = (event) => {
@@ -219,10 +266,10 @@ async function startStream() {
 
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
-      statusText.textContent = "LIVE";
+      statusText.textContent = t.live;
       statusBadge.classList.add('streaming');
       streamBtn.classList.add('active');
-      btnLabel.textContent = "STOP STREAM";
+      btnLabel.textContent = t.stopStream;
       isStreaming = true;
       requestWakeLock();
     } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
@@ -239,7 +286,7 @@ async function startStream() {
     }
     params.degradationPreference = 'maintain-framerate';
     const fpsChoice = parseInt(fpsSelect.value, 10) || 30;
-    const resChoice = resSelect.value === '1080' ? '1080' : '720';
+    const resChoice = resSelect.value === '720' ? '720' : '1080';
     const targetBitrate = resChoice === '1080' ? 4500000 : 2500000;
 
     params.encodings[0].maxFramerate = fpsChoice;
@@ -276,10 +323,11 @@ function stopStream() {
   }
   currentSender = null;
   isStreaming = false;
-  statusText.textContent = "READY";
+  const t = UI_TEXT[currentLang];
+  statusText.textContent = t.ready;
   statusBadge.classList.remove('streaming');
   streamBtn.classList.remove('active');
-  btnLabel.textContent = "START STREAM";
+  btnLabel.textContent = t.startStream;
   releaseWakeLock();
 }
 
@@ -298,6 +346,7 @@ resSelect.addEventListener('change', () => changeResolution(resSelect.value));
 fpsSelect.addEventListener('change', () => changeFps(parseInt(fpsSelect.value, 10)));
 
 window.addEventListener('DOMContentLoaded', () => {
+  applyLanguage(currentLang);
   initCamera();
   startCommandPolling();
 });

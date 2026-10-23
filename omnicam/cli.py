@@ -2,7 +2,7 @@
 OmniCam CLI Entry Point
 Finds network IP, sets up virtual webcam, prints ANSI QR code, and starts the server.
 Includes interactive CLI commands to control resolution, FPS, and camera flip from the PC.
-Provides a clean, non-overwriting terminal prompt.
+Supports English (default) and Russian.
 """
 
 import sys
@@ -16,6 +16,7 @@ import qrcode
 from .cert import get_or_create_ssl_cert
 from .v4l2 import V4L2DeviceManager
 from .server import OmniCamServer
+from .i18n import i18n
 
 def get_primary_local_ip() -> str:
     """Finds the primary local LAN IP connected to default gateway."""
@@ -72,6 +73,13 @@ def parse_args():
         help="Webcam output resolution preset: 1080 or 720 (default: 1080)"
     )
     parser.add_argument(
+        "--lang",
+        type=str,
+        default="en",
+        choices=["en", "ru"],
+        help="Language interface: en (English, default) or ru (Russian)"
+    )
+    parser.add_argument(
         "--width",
         type=int,
         default=None,
@@ -110,48 +118,55 @@ def setup_cli_input_thread(server: OmniCamServer, loop: asyncio.AbstractEventLoo
                 if not cmd:
                     stats = get_last_stats()
                     if stats and stats.get("frames", 0) > 0:
-                        print(f"  [📹 STATUS] Phone: {stats['phone_w']}x{stats['phone_h']} | Output: {stats['out_w']}x{stats['out_h']} | FPS: {stats['fps']} | Total Frames: {stats['frames']}")
+                        print(i18n.get("status_info", **stats))
                     continue
 
                 if cmd in ["720", "res 720", "720p"]:
-                    print("  [🎮 REMOTE] Switching phone camera to 720p...")
+                    print(i18n.get("remote_res", val="720p"))
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("set_res", "720"), loop)
                 elif cmd in ["1080", "res 1080", "1080p"]:
-                    print("  [🎮 REMOTE] Switching phone camera to 1080p...")
+                    print(i18n.get("remote_res", val="1080p"))
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("set_res", "1080"), loop)
                 elif cmd in ["30", "fps 30", "30fps"]:
-                    print("  [🎮 REMOTE] Setting phone framerate to 30 FPS...")
+                    print(i18n.get("remote_fps", val="30"))
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("set_fps", 30), loop)
                 elif cmd in ["60", "fps 60", "60fps"]:
-                    print("  [🎮 REMOTE] Setting phone framerate to 60 FPS...")
+                    print(i18n.get("remote_fps", val="60"))
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("set_fps", 60), loop)
                 elif cmd in ["f", "flip", "cam"]:
-                    print("  [🎮 REMOTE] Flipping camera (Front ⇄ Rear)...")
+                    print(i18n.get("remote_flip"))
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("flip"), loop)
                 elif cmd in ["t", "torch", "flash"]:
-                    print("  [🎮 REMOTE] Toggling flashlight...")
+                    print(i18n.get("remote_torch"))
                     asyncio.run_coroutine_threadsafe(server.broadcast_command("torch"), loop)
                 elif cmd in ["s", "status", "stat"]:
                     stats = get_last_stats()
                     if stats and stats.get("frames", 0) > 0:
-                        print(f"  [📹 STATUS] Phone: {stats['phone_w']}x{stats['phone_h']} | Output: {stats['out_w']}x{stats['out_h']} | FPS: {stats['fps']} | Total Frames: {stats['frames']}")
+                        print(i18n.get("status_info", **stats))
                     else:
-                        print("  [📹 STATUS] Waiting for phone to connect...")
+                        print(i18n.get("status_waiting"))
+                elif cmd in ["lang ru", "ru"]:
+                    i18n.set_lang("ru")
+                    print(i18n.get("lang_switched"))
+                elif cmd in ["lang en", "en"]:
+                    i18n.set_lang("en")
+                    print(i18n.get("lang_switched"))
                 elif cmd in ["h", "help", "?"]:
-                    print("\n--- [🎮 Interactive Commands] ---")
-                    print("  720 / 1080   : Change resolution (strictly 16:9 widescreen)")
-                    print("  30 / 60      : Change FPS")
-                    print("  f / flip     : Switch Front / Rear camera")
-                    print("  t / torch    : Toggle Flashlight")
-                    print("  s / status   : Show current stream status & FPS")
-                    print("  q / quit     : Exit OmniCam cleanly")
+                    print(i18n.get("help_header"))
+                    print(i18n.get("help_res"))
+                    print(i18n.get("help_fps"))
+                    print(i18n.get("help_flip"))
+                    print(i18n.get("help_torch"))
+                    print(i18n.get("help_status"))
+                    print(i18n.get("help_lang"))
+                    print(i18n.get("help_exit"))
                     print("---------------------------------\n")
                 elif cmd in ["q", "quit", "exit"]:
-                    print("\n[*] Exiting...")
+                    print(i18n.get("exiting"))
                     loop.call_soon_threadsafe(loop.stop)
                     break
                 else:
-                    print(f"  [!] Unknown command: '{cmd}'. Type 'help' for options.")
+                    print(i18n.get("unknown_cmd", cmd=cmd))
             except Exception:
                 break
 
@@ -161,6 +176,8 @@ def setup_cli_input_thread(server: OmniCamServer, loop: asyncio.AbstractEventLoo
 
 def main():
     args = parse_args()
+    i18n.set_lang(args.lang)
+
     local_ip = args.ip or get_primary_local_ip()
     port = args.port
     device = args.device
@@ -177,7 +194,7 @@ def main():
         height = args.height
 
     print("=========================================================")
-    print(f"  📷 OmniCam — Phone Webcam for Linux")
+    print(f"  {i18n.get('title')}")
     print("=========================================================")
 
     # Initialize device manager
@@ -190,7 +207,7 @@ def main():
         device_mgr._keep_device = True
 
     # Generate or retrieve SSL Cert
-    print("[*] Generating local SSL certificate...")
+    print(i18n.get("cert_gen"))
     cert_path, key_path = get_or_create_ssl_cert(local_ip)
 
     ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -205,9 +222,7 @@ def main():
         res_key = (stats['phone_w'], stats['phone_h'])
         if res_key != last_reported_res and stats['phone_w'] > 0:
             last_reported_res = res_key
-            sys.stdout.write(
-                f"\n  [📹 STREAM ACTIVE] Phone: {stats['phone_w']}x{stats['phone_h']} ➔ Output: {stats['out_w']}x{stats['out_h']} @ {stats['fps']} FPS\n"
-            )
+            sys.stdout.write(i18n.get("stream_active", **stats))
             sys.stdout.write("omnicam > ")
             sys.stdout.flush()
 
@@ -215,17 +230,18 @@ def main():
 
     url = f"https://{local_ip}:{port}"
     print("\n---------------------------------------------------------")
-    print("📱 SCAN THIS QR CODE WITH YOUR PHONE CAMERA:")
+    print(i18n.get("scan_qr"))
     print("---------------------------------------------------------")
     try:
         print_qr_code(url)
     except Exception:
         pass
-    print(f"\n👉 Or open directly in your phone's browser:")
+    print(f"\n{i18n.get('or_open')}")
     print(f"   {url}")
     print("---------------------------------------------------------")
-    print(f"💡 Select '{card_label}' in Discord, OBS, Telegram, or Zoom.")
-    print("💡 Type 'help' for commands, 'status' for stats, or 'q' to exit.")
+    print(i18n.get("tip_select", label=card_label))
+    print(i18n.get("tip_commands"))
+    print(i18n.get("tip_cleanup"))
     print("---------------------------------------------------------\n")
 
     loop = asyncio.new_event_loop()
@@ -247,7 +263,7 @@ def main():
         stop_event.set()
         loop.run_until_complete(app_runner.cleanup())
         loop.run_until_complete(server.cleanup())
-        print("[*] Goodbye!")
+        print(i18n.get("goodbye"))
 
 if __name__ == "__main__":
     main()

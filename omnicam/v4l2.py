@@ -8,6 +8,7 @@ import os
 import subprocess
 import time
 from typing import Optional
+from .i18n import i18n
 
 class V4L2DeviceManager:
     def __init__(self, device: Optional[str] = None, card_label: str = "OmniCam", width: int = 1920, height: int = 1080):
@@ -28,7 +29,7 @@ class V4L2DeviceManager:
         Dynamically loads the kernel module and creates the virtual webcam device.
         """
         if not self.is_module_loaded():
-            print(f"[*] Dynamically creating virtual webcam ({self.card_label})...")
+            print(i18n.get("device_created", label=self.card_label))
             try:
                 subprocess.run(
                     [
@@ -48,7 +49,7 @@ class V4L2DeviceManager:
                 print(f"[!] Error loading v4l2loopback: {e}")
                 return False
         else:
-            print(f"[*] Virtual webcam module active on {self.device}...")
+            print(i18n.get("device_active", device=self.device))
 
         if not os.path.exists(self.device):
             import glob
@@ -56,7 +57,7 @@ class V4L2DeviceManager:
             if devs:
                 self.device = devs[0]
             else:
-                print(f"[!] Failed to find created video device.")
+                print("[!] Failed to find created video device.")
                 return False
 
         try:
@@ -64,10 +65,9 @@ class V4L2DeviceManager:
         except Exception:
             pass
 
-        # Pre-configure fixed standard resolution before any app (Discord, OBS) connects
         self.setup_format(self.target_width, self.target_height, self.pixel_format)
-
-        print(f"[✓] Virtual webcam online: {self.device} ({self.card_label}) [{self.target_width}x{self.target_height}]")
+        res_str = f"{self.target_width}x{self.target_height}"
+        print(i18n.get("device_online", device=self.device, label=self.card_label, res=res_str))
         return True
 
     def setup_format(self, width: int, height: int, pixel_format: str = "YUYV") -> bool:
@@ -94,7 +94,6 @@ class V4L2DeviceManager:
             print(f"[!] Warning setting format: {e}")
 
         try:
-            # Non-blocking write descriptor to prevent event-loop stalls
             self._fd = os.open(self.device, os.O_WRONLY)
             return True
         except Exception as e:
@@ -126,20 +125,19 @@ class V4L2DeviceManager:
         if self._keep_device:
             return
 
-        print(f"\n[*] Cleaning up: Removing {self.device} from system...")
+        print(i18n.get("cleanup_start", device=self.device))
         time.sleep(0.2)
         res = subprocess.run(["sudo", "modprobe", "-r", "v4l2loopback"], capture_output=True, text=True)
         if res.returncode == 0:
-            print(f"[✓] Virtual webcam device removed. System clean.")
+            print(i18n.get("cleanup_done"))
         else:
             fuser_res = subprocess.run(["fuser", self.device], capture_output=True, text=True).stdout.strip()
             if fuser_res:
-                print(f"[!] Notice: {self.device} is currently kept open by PID {fuser_res} (e.g. Discord camera preview).")
-                print(f"    Once you close the camera preview in that app, the device will be released.")
+                print(i18n.get("cleanup_locked", device=self.device, pid=fuser_res))
             else:
                 time.sleep(0.5)
                 retry_res = subprocess.run(["sudo", "modprobe", "-r", "v4l2loopback"], capture_output=True, text=True)
                 if retry_res.returncode == 0:
-                    print(f"[✓] Virtual webcam device removed. System clean.")
+                    print(i18n.get("cleanup_done"))
                 else:
                     print(f"[!] Info: {retry_res.stderr.strip()}")
